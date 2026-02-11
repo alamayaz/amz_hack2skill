@@ -1,8 +1,8 @@
-# Design Document: BeatSync AI
+# Design Document: Rezaa AI
 
 ## Overview
 
-BeatSync AI is an intelligent multi-agent video editing system that automatically synchronizes user-uploaded video clips to music beats. The system employs a pipeline architecture with specialized agents for audio analysis, video understanding, and beat-clip alignment, coordinated by an LLM-based orchestrator that makes final editing decisions.
+Rezaa AI is an intelligent multi-agent video editing system that automatically synchronizes user-uploaded video clips to music beats. The system employs a pipeline architecture with specialized agents for audio analysis, video understanding, and beat-clip alignment, coordinated by an LLM-based orchestrator that makes final editing decisions.
 
 ### Architecture Philosophy
 
@@ -1184,7 +1184,7 @@ Example:
 
 ### Dual Testing Approach
 
-BeatSync AI requires both **unit testing** and **property-based testing** for comprehensive coverage:
+Rezaa AI requires both **unit testing** and **property-based testing** for comprehensive coverage:
 
 - **Unit tests**: Verify specific examples, edge cases, and integration points
 - **Property tests**: Verify universal properties across randomized inputs
@@ -1223,7 +1223,7 @@ BeatSync AI requires both **unit testing** and **property-based testing** for co
 **Configuration**:
 - Minimum 100 iterations per property test
 - Each test tagged with feature name and property number
-- Tag format: `# Feature: beatsync-ai, Property N: [property text]`
+- Tag format: `# Feature: rezaa-ai, Property N: [property text]`
 
 **Property Test Examples**:
 
@@ -1239,7 +1239,7 @@ import hypothesis
 @hypothesis.settings(max_examples=100)
 def test_file_format_validation(filename, extension):
     """
-    Feature: beatsync-ai, Property 1: File Format Validation
+    Feature: rezaa-ai, Property 1: File Format Validation
     For any uploaded file, if the extension is supported, accept it, otherwise reject.
     """
     file_path = filename + extension
@@ -1262,7 +1262,7 @@ def test_file_format_validation(filename, extension):
 @hypothesis.settings(max_examples=100)
 def test_bpm_range_validity(audio_features):
     """
-    Feature: beatsync-ai, Property 5: BPM Range Validity
+    Feature: rezaa-ai, Property 5: BPM Range Validity
     For any audio file, calculated BPM should be within 30-300 range.
     """
     # Mock audio file with features
@@ -1279,7 +1279,7 @@ def test_bpm_range_validity(audio_features):
 @hypothesis.settings(max_examples=100)
 def test_beat_alignment_constraint(audio_output, video_outputs):
     """
-    Feature: beatsync-ai, Property 14: Beat Alignment Constraint
+    Feature: rezaa-ai, Property 14: Beat Alignment Constraint
     For any alignment output, all align_to_beat timestamps should match beat timestamps.
     """
     agent = BeatClipAlignmentAgent()
@@ -1298,7 +1298,7 @@ def test_beat_alignment_constraint(audio_output, video_outputs):
 @hypothesis.settings(max_examples=100)
 def test_duration_constraint(target_duration, audio_output, video_outputs):
     """
-    Feature: beatsync-ai, Property 19: Duration Constraint
+    Feature: rezaa-ai, Property 19: Duration Constraint
     For any EDL, total duration should match target duration within 0.1 seconds.
     """
     orchestrator = DecisionOrchestrator(llm_client)

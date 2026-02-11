@@ -1,12 +1,12 @@
-# Requirements Document: BeatSync AI
+# Requirements Document: Rezaa AI
 
 ## Introduction
 
-BeatSync AI is an intelligent multi-agent video editing system that automatically synchronizes user-uploaded video clips to music beats. The system analyzes audio features (beats, BPM, energy), video features (motion, scene changes, energy), and intelligently aligns clips to beats to create professionally edited, beat-synced short-form videos (reels). The system consists of a preprocessing layer, multi-agent intelligence layer (Audio Analysis Agent, Video Understanding Agent, Beat-Clip Alignment Agent), an LLM-based Decision Orchestrator, and a rendering engine.
+Rezaa AI is an intelligent multi-agent video editing system that automatically synchronizes user-uploaded video clips to music beats. The system analyzes audio features (beats, BPM, energy), video features (motion, scene changes, energy), and intelligently aligns clips to beats to create professionally edited, beat-synced short-form videos (reels). The system consists of a preprocessing layer, multi-agent intelligence layer (Audio Analysis Agent, Video Understanding Agent, Beat-Clip Alignment Agent), an LLM-based Decision Orchestrator, and a rendering engine.
 
 ## Glossary
 
-- **BeatSync_System**: The complete multi-agent video editing system
+- **Rezaa_System**: The complete multi-agent video editing system
 - **Audio_Analysis_Agent**: Agent responsible for beat detection, BPM calculation, and energy curve extraction
 - **Video_Understanding_Agent**: Agent responsible for motion detection, scene change detection, and clip energy scoring
 - **Beat_Clip_Alignment_Agent**: Agent responsible for matching clip energy with beat energy and determining trim duration
@@ -32,11 +32,11 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 #### Acceptance Criteria
 
-1. WHEN a user uploads video clips, THE BeatSync_System SHALL accept common video formats (MP4, MOV, AVI, WebM)
-2. WHEN a user uploads an audio file, THE BeatSync_System SHALL accept common audio formats (MP3, WAV, AAC, M4A)
-3. WHEN a user uploads files exceeding size limits, THE BeatSync_System SHALL reject the upload and provide a clear error message indicating the maximum allowed size
-4. WHEN uploads are in progress, THE BeatSync_System SHALL display upload progress for each file
-5. WHEN all required files are uploaded, THE BeatSync_System SHALL enable the processing action
+1. WHEN a user uploads video clips, THE Rezaa_System SHALL accept common video formats (MP4, MOV, AVI, WebM)
+2. WHEN a user uploads an audio file, THE Rezaa_System SHALL accept common audio formats (MP3, WAV, AAC, M4A)
+3. WHEN a user uploads files exceeding size limits, THE Rezaa_System SHALL reject the upload and provide a clear error message indicating the maximum allowed size
+4. WHEN uploads are in progress, THE Rezaa_System SHALL display upload progress for each file
+5. WHEN all required files are uploaded, THE Rezaa_System SHALL enable the processing action
 
 ### Requirement 2: Audio Feature Extraction
 
@@ -110,10 +110,10 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 #### Acceptance Criteria
 
 1. WHEN processing uploaded content, THE Feature_Extractor SHALL extract only numerical features, embeddings, and metadata
-2. WHEN feature extraction is complete, THE BeatSync_System SHALL delete raw uploaded video and audio files from temporary storage
-3. WHEN storing training data, THE BeatSync_System SHALL store only extracted features (BPM, beat timestamps, spectral energy, motion vectors, scene cut frequency)
-4. WHEN a user requests data deletion, THE BeatSync_System SHALL remove all stored features and metadata associated with that user
-5. THE BeatSync_System SHALL NOT store raw video frames or audio waveforms in persistent storage
+2. WHEN feature extraction is complete, THE Rezaa_System SHALL delete raw uploaded video and audio files from temporary storage
+3. WHEN storing training data, THE Rezaa_System SHALL store only extracted features (BPM, beat timestamps, spectral energy, motion vectors, scene cut frequency)
+4. WHEN a user requests data deletion, THE Rezaa_System SHALL remove all stored features and metadata associated with that user
+5. THE Rezaa_System SHALL NOT store raw video frames or audio waveforms in persistent storage
 
 ### Requirement 8: Processing Pipeline Orchestration
 
@@ -121,12 +121,12 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 #### Acceptance Criteria
 
-1. WHEN a user initiates processing, THE BeatSync_System SHALL execute the pipeline in the following order: feature extraction, agent analysis, orchestration, rendering
-2. WHEN any pipeline stage fails, THE BeatSync_System SHALL halt processing and report the failure to the user with actionable information
-3. WHEN processing is in progress, THE BeatSync_System SHALL display the current pipeline stage to the user
-4. WHEN processing completes successfully, THE BeatSync_System SHALL notify the user and provide a download link for the final reel
-5. WHILE processing is in progress, THE BeatSync_System SHALL allow users to cancel the operation
-6. WHEN a user cancels processing, THE BeatSync_System SHALL clean up temporary files and release system resources
+1. WHEN a user initiates processing, THE Rezaa_System SHALL execute the pipeline in the following order: feature extraction, agent analysis, orchestration, rendering
+2. WHEN any pipeline stage fails, THE Rezaa_System SHALL halt processing and report the failure to the user with actionable information
+3. WHEN processing is in progress, THE Rezaa_System SHALL display the current pipeline stage to the user
+4. WHEN processing completes successfully, THE Rezaa_System SHALL notify the user and provide a download link for the final reel
+5. WHILE processing is in progress, THE Rezaa_System SHALL allow users to cancel the operation
+6. WHEN a user cancels processing, THE Rezaa_System SHALL clean up temporary files and release system resources
 
 ### Requirement 9: Model Training and Improvement
 
@@ -134,12 +134,12 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 #### Acceptance Criteria
 
-1. WHEN training data is collected, THE BeatSync_System SHALL extract features from high-performing videos without storing raw video content
-2. WHEN training the Beat-Cut Prediction Model, THE BeatSync_System SHALL learn patterns for optimal cut placement at beats
-3. WHEN training the Clip Suitability Model, THE BeatSync_System SHALL learn which clip characteristics match specific beat characteristics
-4. WHEN training the Trim Optimization Model, THE BeatSync_System SHALL learn optimal clip duration for different beat patterns
-5. WHEN models are updated, THE BeatSync_System SHALL version the models and allow rollback to previous versions
-6. WHERE reinforcement learning is enabled, THE BeatSync_System SHALL use user engagement metrics to improve alignment decisions
+1. WHEN training data is collected, THE Rezaa_System SHALL extract features from high-performing videos without storing raw video content
+2. WHEN training the Beat-Cut Prediction Model, THE Rezaa_System SHALL learn patterns for optimal cut placement at beats
+3. WHEN training the Clip Suitability Model, THE Rezaa_System SHALL learn which clip characteristics match specific beat characteristics
+4. WHEN training the Trim Optimization Model, THE Rezaa_System SHALL learn optimal clip duration for different beat patterns
+5. WHEN models are updated, THE Rezaa_System SHALL version the models and allow rollback to previous versions
+6. WHERE reinforcement learning is enabled, THE Rezaa_System SHALL use user engagement metrics to improve alignment decisions
 
 ### Requirement 10: Performance and Scalability
 
@@ -147,11 +147,11 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 #### Acceptance Criteria
 
-1. WHEN processing a reel with 5-10 clips and a 30-second song, THE BeatSync_System SHALL complete processing within 2 minutes on CPU-based infrastructure
-2. WHEN multiple users submit processing requests, THE BeatSync_System SHALL queue requests and process them in order
-3. WHEN system load is high, THE BeatSync_System SHALL provide estimated wait time to users
-4. WHERE GPU acceleration is available, THE BeatSync_System SHALL utilize GPU resources for video processing tasks
-5. WHEN processing large video files, THE BeatSync_System SHALL stream and process video in chunks to manage memory usage
+1. WHEN processing a reel with 5-10 clips and a 30-second song, THE Rezaa_System SHALL complete processing within 2 minutes on CPU-based infrastructure
+2. WHEN multiple users submit processing requests, THE Rezaa_System SHALL queue requests and process them in order
+3. WHEN system load is high, THE Rezaa_System SHALL provide estimated wait time to users
+4. WHERE GPU acceleration is available, THE Rezaa_System SHALL utilize GPU resources for video processing tasks
+5. WHEN processing large video files, THE Rezaa_System SHALL stream and process video in chunks to manage memory usage
 
 ### Requirement 11: Error Handling and Recovery
 
@@ -159,12 +159,12 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 #### Acceptance Criteria
 
-1. WHEN uploaded video files are corrupted, THE BeatSync_System SHALL detect the corruption and inform the user which file is problematic
+1. WHEN uploaded video files are corrupted, THE Rezaa_System SHALL detect the corruption and inform the user which file is problematic
 2. WHEN audio files lack detectable beats, THE Audio_Analysis_Agent SHALL inform the user and suggest alternative audio files
-3. WHEN video clips are too short for the song duration, THE BeatSync_System SHALL inform the user and suggest uploading additional clips
-4. WHEN an agent fails to produce output, THE BeatSync_System SHALL log the error details and provide a user-friendly error message
-5. WHEN rendering fails, THE BeatSync_System SHALL preserve the edit decision list and allow the user to retry rendering
-6. IF system resources are exhausted, THEN THE BeatSync_System SHALL queue the request and notify the user of the delay
+3. WHEN video clips are too short for the song duration, THE Rezaa_System SHALL inform the user and suggest uploading additional clips
+4. WHEN an agent fails to produce output, THE Rezaa_System SHALL log the error details and provide a user-friendly error message
+5. WHEN rendering fails, THE Rezaa_System SHALL preserve the edit decision list and allow the user to retry rendering
+6. IF system resources are exhausted, THEN THE Rezaa_System SHALL queue the request and notify the user of the delay
 
 ### Requirement 12: User Preferences and Customization
 
@@ -174,9 +174,9 @@ BeatSync AI is an intelligent multi-agent video editing system that automaticall
 
 1. WHERE a user specifies pacing preference, THE Decision_Orchestrator SHALL adjust clip duration accordingly (fast-paced: shorter clips, slow-paced: longer clips)
 2. WHERE a user specifies style preference, THE Decision_Orchestrator SHALL apply appropriate editing patterns (dramatic: emphasis on drops, smooth: gradual transitions)
-3. WHERE a user specifies target duration, THE BeatSync_System SHALL create a reel matching the specified length by selecting an appropriate portion of the song
+3. WHERE a user specifies target duration, THE Rezaa_System SHALL create a reel matching the specified length by selecting an appropriate portion of the song
 4. WHERE a user specifies transition preferences, THE Rendering_Engine SHALL apply the specified transition types (cuts, fades, wipes)
-5. WHEN no preferences are specified, THE BeatSync_System SHALL use default settings optimized for general short-form video content
+5. WHEN no preferences are specified, THE Rezaa_System SHALL use default settings optimized for general short-form video content
 
 ## Notes
 
