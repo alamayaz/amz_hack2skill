@@ -1,0 +1,41 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - REZAA_REDIS_URL=redis://redis:6379/0
+      - REZAA_CELERY_BROKER_URL=redis://redis:6379/0
+      - REZAA_CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - REZAA_OPENAI_API_KEY=${REZAA_OPENAI_API_KEY:-}
+      - REZAA_TEMP_DIR=/tmp/rezaa/temp
+      - REZAA_OUTPUT_DIR=/tmp/rezaa/output
+      - REZAA_FEATURE_STORE_DIR=/tmp/rezaa/features
+    volumes:
+      - rezaa-temp:/tmp/rezaa
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: celery -A rezaa.pipeline.tasks:celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - REZAA_REDIS_URL=redis://redis:6379/0
+      - REZAA_CELERY_BROKER_URL=redis://redis:6379/0
+      - REZAA_CELERY_RESULT_BACKEND=redis://redis:6379/1
+      - REZAA_OPENAI_API_KEY=${REZAA_OPENAI_API_KEY:-}
+      - REZAA_TEMP_DIR=/tmp/rezaa/temp
+      - REZAA_OUTPUT_DIR=/tmp/rezaa/output
+      - REZAA_FEATURE_STORE_DIR=/tmp/rezaa/features
+    volumes:
+      - rezaa-temp:/tmp/rezaa
+    depends_on:
+      - redis
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  rezaa-temp:
