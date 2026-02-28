@@ -73,6 +73,11 @@ class EditDecisionList(BaseModel):
     @field_validator("clip_decisions")
     @classmethod
     def validate_no_consecutive_same_clip(cls, v: list[ClipDecision]) -> list[ClipDecision]:
+        # If all clips share one source, consecutive repeats are unavoidable
+        unique_ids = {c.clip_id for c in v}
+        if len(unique_ids) <= 1:
+            return v
+
         sorted_clips = sorted(v, key=lambda c: c.timeline_start)
         for i in range(1, len(sorted_clips)):
             if sorted_clips[i].clip_id == sorted_clips[i - 1].clip_id:

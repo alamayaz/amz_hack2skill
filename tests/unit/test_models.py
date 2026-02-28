@@ -285,6 +285,7 @@ class TestClipDecision:
             )
 
     def test_no_consecutive_same_clip(self):
+        """Consecutive same clip_id is rejected when multiple distinct clips exist."""
         with pytest.raises(Exception):
             EditDecisionList(
                 clip_decisions=[
@@ -302,8 +303,15 @@ class TestClipDecision:
                         timeline_start=1.0,
                         timeline_end=2.0,
                     ),
+                    ClipDecision(
+                        clip_id="clip_002",
+                        source_start=0.0,
+                        source_end=1.0,
+                        timeline_start=2.0,
+                        timeline_end=3.0,
+                    ),
                 ],
-                total_duration=2.0,
+                total_duration=3.0,
             )
 
 

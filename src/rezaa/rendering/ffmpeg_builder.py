@@ -22,24 +22,20 @@ class FFmpegFilterGraphBuilder:
         input_args = []
         filter_parts = []
         concat_inputs = []
-        seen_inputs = {}
-        input_idx = 0
 
+        # Each clip decision gets its own -i input so the same file can be
+        # referenced multiple times without stream exhaustion.
         for i, cd in enumerate(clip_decisions):
             clip_path = cd.get("clip_path", "")
-            if clip_path not in seen_inputs:
-                seen_inputs[clip_path] = input_idx
-                input_args.extend(["-i", clip_path])
-                input_idx += 1
+            input_args.extend(["-i", clip_path])
 
-            src_idx = seen_inputs[clip_path]
             src_start = cd["source_start"]
             src_end = cd["source_end"]
 
             # Trim, scale, setpts
             vid_label = f"v{i}"
             filter_parts.append(
-                f"[{src_idx}:v]trim=start={src_start:.4f}:end={src_end:.4f},"
+                f"[{i}:v]trim=start={src_start:.4f}:end={src_end:.4f},"
                 f"setpts=PTS-STARTPTS,"
                 f"scale={target_width}:{target_height}:force_original_aspect_ratio=decrease,"
                 f"pad={target_width}:{target_height}:(ow-iw)/2:(oh-ih)/2,"

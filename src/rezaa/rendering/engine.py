@@ -54,10 +54,16 @@ class RenderingEngine:
             process.wait()
 
             if process.returncode != 0:
-                stderr_text = "".join(stderr_lines[-20:])
+                stderr_text = "".join(stderr_lines[-30:])
+                # Dump full command to a debug file for inspection
+                debug_path = output_path.parent / "ffmpeg_debug.txt"
+                debug_path.write_text(
+                    "COMMAND:\n" + " ".join(cmd) + "\n\nSTDERR:\n" + "".join(stderr_lines)
+                )
+                logger.error("FFmpeg failed (code %d). Debug at: %s", process.returncode, debug_path)
                 raise RenderingError(
                     f"FFmpeg exited with code {process.returncode}",
-                    details={"stderr": stderr_text, "command": " ".join(cmd[:10])},
+                    details={"stderr": stderr_text, "debug_file": str(debug_path)},
                 )
 
             # Notify 100%
@@ -122,8 +128,8 @@ class RenderingEngine:
             volume=edl.audio_decision.volume,
         )
 
-        # Count existing inputs for audio input index
-        audio_idx = len(set(cd["clip_path"] for cd in clip_dicts))
+        # Audio input comes after all clip inputs (one per clip decision)
+        audio_idx = len(clip_dicts)
 
         cmd = ["ffmpeg", "-y"]
         cmd.extend(input_args)
@@ -147,7 +153,6 @@ class RenderingEngine:
                 self.settings.output_preset,
                 "-c:a",
                 self.settings.output_audio_codec,
-                "-shortest",
                 str(output_path),
             ]
         )

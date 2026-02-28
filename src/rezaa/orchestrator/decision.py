@@ -79,6 +79,46 @@ class DecisionOrchestrator:
         edl_data = parse_llm_response(response_text)
         return validate_edl(edl_data, audio_analysis.features.duration)
 
+    @staticmethod
+    def _find_best_audio_window(
+        audio_analysis: AudioAnalysisOutput, window: float
+    ) -> float:
+        """Find the start time of the most energetic window in the audio.
+
+        Slides a *window*-second frame across the energy curve and returns the
+        offset with the highest average energy.  Falls back to a drop timestamp
+        if one exists, or 0.0 if energy data is unavailable.
+        """
+        audio_dur = audio_analysis.features.duration
+        if window >= audio_dur:
+            return 0.0
+
+        curve = audio_analysis.features.energy_curve
+        if not curve:
+            # No energy data — prefer first drop if available
+            for dt in audio_analysis.features.drop_timestamps:
+                start = max(0.0, dt - 1.0)
+                if start + window <= audio_dur:
+                    return round(start, 4)
+            return 0.0
+
+        best_start = 0.0
+        best_avg = -1.0
+
+        # Sample candidate start positions every 0.5 s
+        step = 0.5
+        t = 0.0
+        while t + window <= audio_dur + 0.01:
+            pts = [(ts, e) for ts, e in curve if t <= ts <= t + window]
+            if pts:
+                avg = sum(e for _, e in pts) / len(pts)
+                if avg > best_avg:
+                    best_avg = avg
+                    best_start = t
+            t += step
+
+        return round(best_start, 4)
+
     def _create_fallback_edl(
         self,
         audio_analysis: AudioAnalysisOutput,
@@ -86,143 +126,152 @@ class DecisionOrchestrator:
         alignment: AlignmentOutput,
         prefs: UserPreferences,
     ) -> EditDecisionList:
-        """Rule-based fallback EDL from alignment placements."""
-        if not alignment.placements:
+        """Rule-based fallback EDL that fills the full target duration.
+
+        Cycles through video clips to produce back-to-back clip decisions
+        covering the entire audio (or user-specified target) duration.
+        Picks the most energetic section of the audio rather than always
+        starting from the beginning.
+        """
+        audio_dur = audio_analysis.features.duration
+        target = prefs.target_duration or audio_dur
+        if not video_analyses:
             return EditDecisionList(
-                total_duration=audio_analysis.features.duration,
-                audio_decision=AudioDecision(trim_end=audio_analysis.features.duration),
+                total_duration=target,
+                audio_decision=AudioDecision(trim_end=target),
             )
+
+        # Pick the best audio window
+        audio_start = self._find_best_audio_window(audio_analysis, target)
+        audio_end = round(min(audio_start + target, audio_dur), 4)
+        # Actual reel length may be shorter if audio isn't long enough
+        actual_target = round(audio_end - audio_start, 4)
+
+        # Determine per-clip duration from pacing
+        pacing_defaults = {"fast": 1.0, "medium": 2.0, "slow": 4.0}
+        clip_dur = pacing_defaults.get(prefs.pacing, 2.0)
+
+        # Build a round-robin order; prefer alignment order if available
+        if alignment.placements:
+            ordered_ids = []
+            for p in sorted(alignment.placements, key=lambda p: p.align_to_beat):
+                if not ordered_ids or ordered_ids[-1] != p.clip_id:
+                    ordered_ids.append(p.clip_id)
+            if not ordered_ids:
+                ordered_ids = [va.clip_id for va in video_analyses]
+        else:
+            ordered_ids = [va.clip_id for va in video_analyses]
+
+        # Map clip_id → max source duration
+        clip_durations = {va.clip_id: va.features.duration for va in video_analyses}
 
         clip_decisions = []
         timeline_pos = 0.0
+        idx = 0
         last_clip_id = None
 
-        for placement in alignment.placements:
-            clip_id = placement.clip_id
+        while timeline_pos < actual_target - 0.05:
+            clip_id = ordered_ids[idx % len(ordered_ids)]
+            idx += 1
 
-            # Skip if same as last (variety enforcement)
-            if clip_id == last_clip_id and len(video_analyses) > 1:
-                # Try to find an alternative
-                alt = None
-                for va in video_analyses:
-                    if va.clip_id != last_clip_id:
-                        alt = va
-                        break
-                if alt:
-                    clip_id = alt.clip_id
+            # Skip consecutive same clip when alternatives exist
+            if clip_id == last_clip_id and len(ordered_ids) > 1:
+                clip_id = ordered_ids[idx % len(ordered_ids)]
+                idx += 1
 
-            source_dur = placement.trim_end - placement.trim_start
-            if source_dur <= 0:
+            remaining = actual_target - timeline_pos
+            seg_dur = min(clip_dur, remaining)
+            max_src = clip_durations.get(clip_id, seg_dur)
+            seg_dur = min(seg_dur, max_src)
+            if seg_dur < 0.1:
+                # Clip too short to use, skip it
+                if idx > len(ordered_ids) * 3:
+                    break
                 continue
+
+            # Cycle source offset so repeated uses show different parts
+            reuse_count = sum(1 for cd in clip_decisions if cd.clip_id == clip_id)
+            src_start = (reuse_count * clip_dur) % max_src
+            if src_start + seg_dur > max_src:
+                src_start = max(0.0, max_src - seg_dur)
 
             try:
                 cd = ClipDecision(
                     clip_id=clip_id,
-                    source_start=placement.trim_start,
-                    source_end=placement.trim_end,
+                    source_start=round(src_start, 4),
+                    source_end=round(src_start + seg_dur, 4),
                     timeline_start=round(timeline_pos, 4),
-                    timeline_end=round(timeline_pos + source_dur, 4),
+                    timeline_end=round(timeline_pos + seg_dur, 4),
                     transition_type=prefs.transition_type,
-                    energy_match_score=placement.energy_match_score,
+                    energy_match_score=0.8,
                 )
                 clip_decisions.append(cd)
-                timeline_pos += source_dur
+                timeline_pos += seg_dur
                 last_clip_id = clip_id
             except Exception:
+                if idx > len(ordered_ids) * 3:
+                    break
                 continue
 
-        total_duration = timeline_pos if clip_decisions else audio_analysis.features.duration
+        total_duration = round(timeline_pos, 4) if clip_decisions else actual_target
 
         return EditDecisionList(
             clip_decisions=clip_decisions,
             audio_decision=AudioDecision(
-                trim_end=total_duration,
+                trim_start=audio_start,
+                trim_end=audio_end,
+                fade_in=min(0.3, total_duration * 0.03),
                 fade_out=min(0.5, total_duration * 0.05),
             ),
-            total_duration=round(total_duration, 4),
+            total_duration=total_duration,
         )
 
     def apply_user_preferences(
         self, edl: EditDecisionList, prefs: UserPreferences
     ) -> EditDecisionList:
-        """Apply user preferences to EDL."""
+        """Apply transition type preference.
+
+        Duration/pacing are already handled by _create_fallback_edl, so this
+        method only enforces transition type and trims to target if needed.
+        """
         if not edl.clip_decisions:
             return edl
 
-        # Pacing adjustment
-        pacing_limits = {
-            "fast": (0.3, 1.5),
-            "medium": (1.0, 3.0),
-            "slow": (2.0, 8.0),
-        }
-        min_dur, max_dur = pacing_limits.get(prefs.pacing, (1.0, 3.0))
-
-        adjusted_decisions = []
+        adjusted = []
         timeline_pos = 0.0
-        last_clip_id = None
+        target = prefs.target_duration or edl.total_duration
 
         for cd in edl.clip_decisions:
-            source_dur = cd.source_end - cd.source_start
+            if timeline_pos >= target - 0.05:
+                break
 
-            # Clamp duration to pacing range
-            clamped_dur = max(min_dur, min(max_dur, source_dur))
-
-            # Adjust source end if needed
-            new_source_end = cd.source_start + clamped_dur
-
-            new_clip_id = cd.clip_id
-            # Ensure no consecutive same clip
-            if new_clip_id == last_clip_id:
-                continue
+            dur = cd.source_end - cd.source_start
+            remaining = target - timeline_pos
+            if dur > remaining + 0.05:
+                dur = round(remaining, 4)
 
             try:
                 new_cd = ClipDecision(
-                    clip_id=new_clip_id,
+                    clip_id=cd.clip_id,
                     source_start=cd.source_start,
-                    source_end=round(new_source_end, 4),
+                    source_end=round(cd.source_start + dur, 4),
                     timeline_start=round(timeline_pos, 4),
-                    timeline_end=round(timeline_pos + clamped_dur, 4),
+                    timeline_end=round(timeline_pos + dur, 4),
                     transition_type=prefs.transition_type,
                     transition_duration=cd.transition_duration,
                     energy_match_score=cd.energy_match_score,
                 )
-                adjusted_decisions.append(new_cd)
-                timeline_pos += clamped_dur
-                last_clip_id = new_clip_id
+                adjusted.append(new_cd)
+                timeline_pos += dur
             except Exception:
                 continue
 
-        # Apply target duration if specified
-        if prefs.target_duration and adjusted_decisions:
-            # Trim to target duration
-            trimmed = []
-            for cd in adjusted_decisions:
-                if cd.timeline_start >= prefs.target_duration:
-                    break
-                if cd.timeline_end > prefs.target_duration:
-                    excess = cd.timeline_end - prefs.target_duration
-                    try:
-                        new_cd = ClipDecision(
-                            clip_id=cd.clip_id,
-                            source_start=cd.source_start,
-                            source_end=round(cd.source_end - excess, 4),
-                            timeline_start=cd.timeline_start,
-                            timeline_end=round(prefs.target_duration, 4),
-                            transition_type=cd.transition_type,
-                            energy_match_score=cd.energy_match_score,
-                        )
-                        trimmed.append(new_cd)
-                    except Exception:
-                        trimmed.append(cd)
-                    break
-                trimmed.append(cd)
-            adjusted_decisions = trimmed
-            timeline_pos = prefs.target_duration
-
-        total = round(timeline_pos, 4)
+        total = round(timeline_pos, 4) if adjusted else edl.total_duration
+        # trim_end must be absolute audio position, not just the timeline length
+        audio_trim_end = round(edl.audio_decision.trim_start + total, 4)
         return EditDecisionList(
-            clip_decisions=adjusted_decisions,
-            audio_decision=edl.audio_decision.model_copy(update={"trim_end": total}),
+            clip_decisions=adjusted,
+            audio_decision=edl.audio_decision.model_copy(update={"trim_end": audio_trim_end}),
             total_duration=total,
             target_fps=edl.target_fps,
             target_width=edl.target_width,
