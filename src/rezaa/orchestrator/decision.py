@@ -72,7 +72,7 @@ class DecisionOrchestrator:
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
-            temperature=0.3,
+            reasoning_effort="low",
         )
 
         response_text = response.choices[0].message.content
@@ -141,8 +141,11 @@ class DecisionOrchestrator:
                 audio_decision=AudioDecision(trim_end=target),
             )
 
-        # Pick the best audio window
-        audio_start = self._find_best_audio_window(audio_analysis, target)
+        # Use manual audio_start if provided, otherwise auto-select
+        if prefs.audio_start is not None:
+            audio_start = min(prefs.audio_start, max(0.0, audio_dur - target))
+        else:
+            audio_start = self._find_best_audio_window(audio_analysis, target)
         audio_end = round(min(audio_start + target, audio_dur), 4)
         # Actual reel length may be shorter if audio isn't long enough
         actual_target = round(audio_end - audio_start, 4)

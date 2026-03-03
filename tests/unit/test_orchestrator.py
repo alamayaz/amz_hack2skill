@@ -5,8 +5,11 @@ import json
 import pytest
 
 from rezaa.agents.alignment_agent import BeatClipAlignmentAgent
+from rezaa.models.alignment import AlignmentOutput
+from rezaa.models.audio import AudioAnalysisOutput, AudioFeatures
 from rezaa.models.edl import EditDecisionList
 from rezaa.models.preferences import UserPreferences
+from rezaa.models.video import Segment, VideoAnalysisOutput, VideoFeatures
 from rezaa.orchestrator.decision import DecisionOrchestrator
 from rezaa.orchestrator.parser import parse_llm_response, validate_edl
 
@@ -157,3 +160,70 @@ class TestDecisionOrchestrator:
         json_str = edl.model_dump_json()
         restored = EditDecisionList.model_validate_json(json_str)
         assert len(restored.clip_decisions) == len(edl.clip_decisions)
+
+    @pytest.fixture
+    def long_audio_analysis(self):
+        """30-second audio for testing manual offset."""
+        features = AudioFeatures(
+            bpm=120.0,
+            beat_timestamps=[0.5 * i for i in range(1, 61)],
+            energy_curve=[(i * 0.5, 0.5) for i in range(61)],
+            duration=30.0,
+        )
+        return AudioAnalysisOutput(features=features, confidence=0.9)
+
+    @pytest.fixture
+    def long_audio_videos(self):
+        clips = []
+        for i in range(2):
+            features = VideoFeatures(
+                clip_id=f"clip_{i:03d}",
+                motion_score=0.6,
+                energy_score=0.6,
+                best_segments=[Segment(start=0.0, end=5.0, energy_score=0.6)],
+                duration=15.0,
+            )
+            clips.append(VideoAnalysisOutput(
+                clip_id=f"clip_{i:03d}",
+                features=features,
+                temporal_consistency=0.8,
+            ))
+        return clips
+
+    @pytest.fixture
+    def long_audio_alignment(self, long_audio_analysis, long_audio_videos):
+        agent = BeatClipAlignmentAgent()
+        return agent.align(long_audio_analysis, long_audio_videos)
+
+    def test_manual_audio_start(
+        self, orchestrator, long_audio_analysis, long_audio_videos, long_audio_alignment
+    ):
+        """Manual audio_start should set trim_start to that value."""
+        prefs = UserPreferences(audio_start=10.0, target_duration=15.0)
+        edl = orchestrator.orchestrate(
+            long_audio_analysis, long_audio_videos, long_audio_alignment, prefs
+        )
+        assert edl.audio_decision.trim_start == 10.0
+
+    def test_manual_audio_start_clamped(
+        self, orchestrator, long_audio_analysis, long_audio_videos, long_audio_alignment
+    ):
+        """audio_start near end should be clamped so the window fits."""
+        prefs = UserPreferences(audio_start=100.0, target_duration=15.0)
+        edl = orchestrator.orchestrate(
+            long_audio_analysis, long_audio_videos, long_audio_alignment, prefs
+        )
+        # Max offset = 30.0 - 15.0 = 15.0
+        assert edl.audio_decision.trim_start == 15.0
+
+    def test_auto_audio_start_uses_energy(
+        self, orchestrator, sample_audio_analysis, multiple_video_analyses, alignment
+    ):
+        """Omitting audio_start should use the energy-based auto selection."""
+        prefs = UserPreferences()
+        assert prefs.audio_start is None
+        edl = orchestrator.orchestrate(
+            sample_audio_analysis, multiple_video_analyses, alignment, prefs
+        )
+        # Should still produce a valid EDL with energy-based start
+        assert edl.audio_decision.trim_start >= 0.0

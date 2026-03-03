@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # LLM
     openai_api_key: str = ""
-    openai_model: str = "gpt-4"
+    openai_model: str = "gpt-5.2"
 
     # Redis / Celery
     redis_url: str = "redis://localhost:6379/0"

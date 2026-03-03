@@ -21,3 +21,6 @@ class UserPreferences(BaseModel):
     max_clip_reuse: int = Field(
         default=3, ge=1, le=10, description="Max times a single clip can be reused"
     )
+    audio_start: float | None = Field(
+        default=None, ge=0.0, description="Manual audio start offset in seconds"
+    )

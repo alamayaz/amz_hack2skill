@@ -405,6 +405,22 @@ class TestUserPreferences:
         with pytest.raises(Exception):
             UserPreferences(target_duration=2.0)
 
+    def test_audio_start_default_none(self):
+        prefs = UserPreferences()
+        assert prefs.audio_start is None
+
+    def test_audio_start_valid_value(self):
+        prefs = UserPreferences(audio_start=10.5)
+        assert prefs.audio_start == 10.5
+
+    def test_audio_start_zero(self):
+        prefs = UserPreferences(audio_start=0.0)
+        assert prefs.audio_start == 0.0
+
+    def test_audio_start_negative_rejected(self):
+        with pytest.raises(Exception):
+            UserPreferences(audio_start=-1.0)
+
 
 # --- Pipeline ---
 

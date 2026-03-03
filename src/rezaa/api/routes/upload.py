@@ -1,8 +1,10 @@
 """Upload endpoints."""
 
 import shutil
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, UploadFile
+from fastapi.responses import FileResponse
 
 from rezaa.api.dependencies import get_pipeline_manager, get_temp_store
 from rezaa.extractors.validators import validate_audio_upload, validate_video_upload
@@ -79,3 +81,29 @@ async def upload_video(
         "clip_count": len(state.video_paths),
         "message": "Video uploaded successfully",
     }
+
+
+_AUDIO_MIME = {
+    ".mp3": "audio/mpeg",
+    ".wav": "audio/wav",
+    ".aac": "audio/aac",
+    ".m4a": "audio/mp4",
+}
+
+
+@router.get("/audio/{job_id}")
+async def get_audio(
+    job_id: str,
+    manager: PipelineManager = Depends(get_pipeline_manager),
+):
+    """Serve the uploaded audio file for browser playback."""
+    state = manager.get_job_state(job_id)
+    if not state or not state.audio_path:
+        raise ValidationError("Audio not found for this job")
+
+    audio_path = Path(state.audio_path)
+    if not audio_path.exists():
+        raise ValidationError("Audio file missing from disk")
+
+    mime = _AUDIO_MIME.get(audio_path.suffix.lower(), "application/octet-stream")
+    return FileResponse(audio_path, media_type=mime)

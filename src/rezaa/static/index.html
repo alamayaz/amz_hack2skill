@@ -128,6 +128,92 @@
     transition: opacity .2s;
   }
   .download-section a:hover { opacity: .9; }
+
+  /* Audio section slider */
+  .audio-section-step { display: none; }
+  .audio-section-step.visible { display: block; }
+  .audio-mode-toggle {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: .75rem;
+  }
+  .audio-mode-toggle label {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    cursor: pointer;
+    color: #e1e4e8;
+    font-size: .9rem;
+  }
+  .audio-mode-toggle input[type="radio"] { accent-color: #7c3aed; }
+  .waveform-container { display: none; }
+  .waveform-container.visible { display: block; }
+  .waveform-wrapper {
+    position: relative;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    height: 100px;
+    overflow: hidden;
+    touch-action: none;
+    cursor: grab;
+  }
+  .waveform-wrapper:active { cursor: grabbing; }
+  #waveform-canvas { display: block; width: 100%; height: 100%; }
+  .waveform-selection {
+    position: absolute;
+    top: 0;
+    height: 100%;
+    background: rgba(124, 58, 237, 0.25);
+    border-left: 2px solid #7c3aed;
+    border-right: 2px solid #7c3aed;
+    pointer-events: none;
+  }
+  .waveform-times {
+    display: flex;
+    justify-content: space-between;
+    font-size: .8rem;
+    color: #8b949e;
+    margin-top: .35rem;
+  }
+  .waveform-actions {
+    display: flex;
+    gap: .5rem;
+    margin-top: .5rem;
+  }
+  button.secondary-btn {
+    padding: .4rem .75rem;
+    background: transparent;
+    color: #7c3aed;
+    border: 1px solid #7c3aed;
+    border-radius: 6px;
+    font-size: .85rem;
+    cursor: pointer;
+    transition: background .2s, color .2s;
+  }
+  button.secondary-btn:hover { background: rgba(124,58,237,.12); }
+  .clip-duration-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    margin-bottom: .5rem;
+  }
+  .clip-duration-row label {
+    margin-bottom: 0;
+    white-space: nowrap;
+    font-size: .85rem;
+    color: #8b949e;
+  }
+  .clip-duration-row input[type="number"] {
+    width: 80px;
+    margin-bottom: 0;
+    padding: .35rem .5rem;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e1e4e8;
+    font-size: .85rem;
+  }
 </style>
 </head>
 <body>
@@ -145,9 +231,37 @@
     <div class="status-msg" id="audio-status"></div>
   </div>
 
-  <!-- Step 2: Upload Videos -->
+  <!-- Step 2: Audio Section (hidden until audio uploaded) -->
+  <div class="step audio-section-step" id="audio-section-step">
+    <div class="step-header"><span class="step-number">2</span> Audio Section</div>
+    <div class="audio-mode-toggle">
+      <label><input type="radio" name="audio-mode" value="auto" checked> Auto (best energy)</label>
+      <label><input type="radio" name="audio-mode" value="manual"> Manual</label>
+    </div>
+    <div class="waveform-container" id="waveform-container">
+      <div class="clip-duration-row">
+        <label for="clip-duration">Clip Duration (s)</label>
+        <input type="number" id="clip-duration" value="15" min="1" max="600" step="1">
+      </div>
+      <div class="waveform-wrapper" id="waveform-wrapper">
+        <canvas id="waveform-canvas"></canvas>
+        <div class="waveform-selection" id="waveform-selection"></div>
+      </div>
+      <div class="waveform-times">
+        <span id="waveform-start-time">0:00</span>
+        <span id="waveform-end-time">0:00</span>
+      </div>
+      <div class="waveform-actions">
+        <button class="secondary-btn" id="preview-btn" type="button">Preview</button>
+      </div>
+    </div>
+    <audio id="audio-preview" preload="auto"></audio>
+    <div class="status-msg" id="waveform-status"></div>
+  </div>
+
+  <!-- Step 3: Upload Videos -->
   <div class="step">
-    <div class="step-header"><span class="step-number">2</span> Upload Video Clips</div>
+    <div class="step-header"><span class="step-number">3</span> Upload Video Clips</div>
     <div class="drop-zone" id="video-drop">
       <input type="file" id="video-input" accept=".mp4,.mov,.avi,.webm" multiple>
       Drop video files here or click to browse<br><small>mp4, mov, avi, webm &mdash; multiple allowed</small>
@@ -155,9 +269,9 @@
     <div class="status-msg" id="video-status"></div>
   </div>
 
-  <!-- Step 3: Preferences -->
+  <!-- Step 4: Preferences -->
   <div class="step">
-    <div class="step-header"><span class="step-number">3</span> Preferences</div>
+    <div class="step-header"><span class="step-number">4</span> Preferences</div>
     <div class="pref-grid">
       <div>
         <label for="pacing">Pacing</label>
@@ -190,9 +304,9 @@
     </div>
   </div>
 
-  <!-- Step 4: Create Reel -->
+  <!-- Step 5: Create Reel -->
   <div class="step">
-    <div class="step-header"><span class="step-number">4</span> Create Reel</div>
+    <div class="step-header"><span class="step-number">5</span> Create Reel</div>
     <button class="primary" id="create-btn" disabled>Create Reel</button>
     <div class="status-msg" id="process-status"></div>
 
@@ -216,6 +330,18 @@
   let jobId = null;
   let clipCount = 0;
   let pollTimer = null;
+
+  // Waveform / audio section state
+  let audioBuffer = null;
+  let audioDuration = 0;
+  let audioStartOffset = 0;
+  let audioMode = 'auto';   // 'auto' | 'manual'
+  let audioCtx = null;
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartOffset = 0;
+  let previewTimeout = null;
+  let isPreviewPlaying = false;
 
   const $ = id => document.getElementById(id);
 
@@ -244,6 +370,21 @@
     $('create-btn').disabled = !(jobId && clipCount > 0);
   }
 
+  // --- Helpers ---
+  function getTargetDuration() {
+    return parseFloat($('duration').value) || 30;
+  }
+
+  function getClipDuration() {
+    return parseFloat($('clip-duration').value) || 15;
+  }
+
+  function formatTime(sec) {
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
   // --- Upload Audio ---
   async function handleAudio(files) {
     const file = files[0];
@@ -260,10 +401,201 @@
       $('progress-section').classList.remove('visible');
       $('download-section').classList.remove('visible');
       setStatus('audio-status', `${data.filename} uploaded (Job: ${jobId})`, true);
+      loadAudioForWaveform(jobId);
     } catch (e) {
       setStatus('audio-status', e.message, false);
     }
     updateCreateBtn();
+  }
+
+  // --- Waveform loading ---
+  async function loadAudioForWaveform(jid) {
+    pausePreview();
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const resp = await fetch('/api/v1/audio/' + jid);
+      if (!resp.ok) throw new Error('Failed to fetch audio');
+      const arrayBuf = await resp.arrayBuffer();
+      audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+      audioDuration = audioBuffer.duration;
+      audioStartOffset = 0;
+
+      // Cap clip duration to audio length
+      const clipDurInput = $('clip-duration');
+      clipDurInput.max = Math.floor(audioDuration);
+      if (parseFloat(clipDurInput.value) > audioDuration) {
+        clipDurInput.value = Math.floor(audioDuration);
+      }
+
+      // Set audio element source for preview playback
+      $('audio-preview').src = '/api/v1/audio/' + jid;
+
+      // Show the audio section step
+      $('audio-section-step').classList.add('visible');
+      drawWaveform();
+      updateSelectionOverlay();
+      setStatus('waveform-status', '', true);
+    } catch (e) {
+      // Graceful degradation — hide slider, auto mode still works
+      $('audio-section-step').classList.remove('visible');
+      console.warn('Waveform decode failed:', e);
+    }
+  }
+
+  // --- Waveform drawing ---
+  function drawWaveform() {
+    if (!audioBuffer) return;
+    const canvas = $('waveform-canvas');
+    const wrapper = $('waveform-wrapper');
+    const w = wrapper.clientWidth;
+    const h = wrapper.clientHeight;
+    canvas.width = w * (window.devicePixelRatio || 1);
+    canvas.height = h * (window.devicePixelRatio || 1);
+    canvas.style.width = w + 'px';
+    canvas.style.height = h + 'px';
+
+    const ctx = canvas.getContext('2d');
+    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    ctx.clearRect(0, 0, w, h);
+
+    const data = audioBuffer.getChannelData(0);
+    const step = Math.ceil(data.length / w);
+    const mid = h / 2;
+
+    ctx.fillStyle = '#30363d';
+    for (let i = 0; i < w; i++) {
+      let min = 1, max = -1;
+      const start = i * step;
+      const end = Math.min(start + step, data.length);
+      for (let j = start; j < end; j++) {
+        if (data[j] < min) min = data[j];
+        if (data[j] > max) max = data[j];
+      }
+      const barTop = mid + min * mid;
+      const barH = (max - min) * mid;
+      ctx.fillRect(i, barTop, 1, Math.max(1, barH));
+    }
+  }
+
+  // --- Selection overlay ---
+  function updateSelectionOverlay() {
+    if (!audioDuration) return;
+    const wrapper = $('waveform-wrapper');
+    const sel = $('waveform-selection');
+    const w = wrapper.clientWidth;
+    const target = Math.min(getClipDuration(), audioDuration);
+
+    const leftPx = (audioStartOffset / audioDuration) * w;
+    const widthPx = (target / audioDuration) * w;
+    sel.style.left = leftPx + 'px';
+    sel.style.width = Math.min(widthPx, w - leftPx) + 'px';
+
+    $('waveform-start-time').textContent = formatTime(audioStartOffset);
+    $('waveform-end-time').textContent = formatTime(audioStartOffset + target);
+  }
+
+  // --- Waveform drag ---
+  function setupWaveformDrag() {
+    const wrapper = $('waveform-wrapper');
+
+    function getX(e) {
+      if (e.touches) return e.touches[0].clientX;
+      return e.clientX;
+    }
+
+    function onStart(e) {
+      if (audioMode !== 'manual') return;
+      isDragging = true;
+      dragStartX = getX(e);
+      dragStartOffset = audioStartOffset;
+      e.preventDefault();
+    }
+
+    function onMove(e) {
+      if (!isDragging) return;
+      const dx = getX(e) - dragStartX;
+      const w = wrapper.clientWidth;
+      const secPerPx = audioDuration / w;
+      const target = Math.min(getClipDuration(), audioDuration);
+      const maxOffset = Math.max(0, audioDuration - target);
+      audioStartOffset = Math.max(0, Math.min(maxOffset, dragStartOffset + dx * secPerPx));
+      updateSelectionOverlay();
+      e.preventDefault();
+    }
+
+    function onEnd() {
+      if (!isDragging) return;
+      isDragging = false;
+      previewAudioAt(audioStartOffset);
+    }
+
+    wrapper.addEventListener('mousedown', onStart);
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onEnd);
+    wrapper.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onEnd);
+  }
+
+  // --- Audio preview ---
+  function previewAudioAt(startSec) {
+    const audio = $('audio-preview');
+    if (!audio.src) return;
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
+    audio.currentTime = startSec;
+    audio.play().catch(() => {});
+    isPreviewPlaying = true;
+    $('preview-btn').textContent = 'Pause';
+    previewTimeout = setTimeout(() => { pausePreview(); }, getClipDuration() * 1000);
+  }
+
+  function pausePreview() {
+    const audio = $('audio-preview');
+    audio.pause();
+    if (previewTimeout) { clearTimeout(previewTimeout); previewTimeout = null; }
+    isPreviewPlaying = false;
+    $('preview-btn').textContent = 'Preview';
+  }
+
+  // --- Auto/Manual toggle ---
+  function setupAudioModeToggle() {
+    const radios = document.querySelectorAll('input[name="audio-mode"]');
+    radios.forEach(r => r.addEventListener('change', function() {
+      audioMode = this.value;
+      if (audioMode === 'manual') {
+        $('waveform-container').classList.add('visible');
+      } else {
+        $('waveform-container').classList.remove('visible');
+        audioStartOffset = 0;
+        pausePreview();
+        updateSelectionOverlay();
+      }
+    }));
+  }
+
+  // --- Duration change listeners ---
+  function setupDurationListener() {
+    $('duration').addEventListener('input', function() {
+      if (!audioDuration) return;
+      const target = Math.min(getTargetDuration(), audioDuration);
+      const maxOffset = Math.max(0, audioDuration - target);
+      audioStartOffset = Math.min(audioStartOffset, maxOffset);
+      updateSelectionOverlay();
+    });
+  }
+
+  function setupClipDurationListener() {
+    $('clip-duration').addEventListener('input', function() {
+      if (!audioDuration) return;
+      // Clamp value to [1, audioDuration]
+      let val = parseFloat(this.value) || 1;
+      val = Math.max(1, Math.min(val, audioDuration));
+      this.value = val;
+      // Re-clamp audioStartOffset
+      const maxOffset = Math.max(0, audioDuration - val);
+      audioStartOffset = Math.min(audioStartOffset, maxOffset);
+      updateSelectionOverlay();
+    });
   }
 
   // --- Upload Videos ---
@@ -300,6 +632,11 @@
     };
     const dur = $('duration').value;
     if (dur) prefs.target_duration = parseFloat(dur);
+
+    // Add manual audio_start if in manual mode
+    if (audioMode === 'manual') {
+      prefs.audio_start = audioStartOffset;
+    }
 
     try {
       const res = await fetch('/api/v1/process', {
@@ -363,10 +700,25 @@
     return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   }
 
+  // --- Window resize ---
+  window.addEventListener('resize', function() {
+    if (audioBuffer) {
+      drawWaveform();
+      updateSelectionOverlay();
+    }
+  });
+
   // --- Init ---
   setupDrop('audio-drop', 'audio-input', handleAudio);
   setupDrop('video-drop', 'video-input', handleVideos);
   $('create-btn').addEventListener('click', createReel);
+  $('preview-btn').addEventListener('click', function() {
+    if (isPreviewPlaying) { pausePreview(); } else { previewAudioAt(audioStartOffset); }
+  });
+  setupAudioModeToggle();
+  setupWaveformDrag();
+  setupDurationListener();
+  setupClipDurationListener();
 })();
 </script>
 </body>
