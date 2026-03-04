@@ -8,12 +8,14 @@ from rezaa.config import get_settings
 from rezaa.models.alignment import AlignmentOutput
 from rezaa.models.audio import AudioAnalysisOutput
 from rezaa.models.edl import AudioDecision, ClipDecision, EditDecisionList
-from rezaa.models.preferences import UserPreferences
+from rezaa.models.preferences import XFADE_TRANSITIONS, UserPreferences
 from rezaa.models.video import VideoAnalysisOutput
 from rezaa.orchestrator.parser import parse_llm_response, validate_edl
 from rezaa.orchestrator.prompts import SYSTEM_PROMPT, build_orchestration_prompt
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_TRANSITION_DURATION = 0.5
 
 
 class DecisionOrchestrator:
@@ -36,12 +38,19 @@ class DecisionOrchestrator:
         """Create an EDL by calling LLM or falling back to rules."""
         prefs = user_preferences or UserPreferences()
 
+        target = prefs.target_duration or audio_analysis.features.duration
+
         # Try LLM
         if self.client:
             try:
                 edl = self._call_llm(audio_analysis, video_analyses, alignment, prefs)
                 edl = self.apply_user_preferences(edl, prefs)
-                return edl
+                if edl.total_duration >= target * 0.9:
+                    return edl
+                logger.warning(
+                    "LLM EDL too short (%.1fs vs %.1fs target), using fallback",
+                    edl.total_duration, target,
+                )
             except Exception as e:
                 logger.warning(f"LLM orchestration failed, using fallback: {e}")
 
@@ -168,12 +177,16 @@ class DecisionOrchestrator:
         # Map clip_id → max source duration
         clip_durations = {va.clip_id: va.features.duration for va in video_analyses}
 
+        # Determine transition type per clip for ai_mix
+        is_ai_mix = prefs.transition_type == "ai_mix"
+
         clip_decisions = []
         timeline_pos = 0.0
+        xfade_overlap = 0.0
         idx = 0
         last_clip_id = None
 
-        while timeline_pos < actual_target - 0.05:
+        while (timeline_pos - xfade_overlap) < actual_target - 0.05:
             clip_id = ordered_ids[idx % len(ordered_ids)]
             idx += 1
 
@@ -182,13 +195,25 @@ class DecisionOrchestrator:
                 clip_id = ordered_ids[idx % len(ordered_ids)]
                 idx += 1
 
-            remaining = actual_target - timeline_pos
-            seg_dur = min(clip_dur, remaining)
+            # Determine transition type for this clip (needed before seg_dur calc)
+            if is_ai_mix:
+                clip_index = len(clip_decisions)
+                trans_type = XFADE_TRANSITIONS[clip_index % len(XFADE_TRANSITIONS)]
+                trans_dur = _DEFAULT_TRANSITION_DURATION
+            else:
+                trans_type = prefs.transition_type
+                trans_dur = _DEFAULT_TRANSITION_DURATION if trans_type != "cut" else 0.0
+
+            remaining = actual_target - (timeline_pos - xfade_overlap)
+            # For non-first clips with xfade, include the upcoming overlap
+            # so seg_dur is always large enough to make net rendered progress
+            overlap_adj = trans_dur if clip_decisions and trans_dur > 0 else 0.0
+            seg_dur = min(clip_dur, remaining + overlap_adj)
             max_src = clip_durations.get(clip_id, seg_dur)
             seg_dur = min(seg_dur, max_src)
             if seg_dur < 0.1:
                 # Clip too short to use, skip it
-                if idx > len(ordered_ids) * 3:
+                if idx > len(ordered_ids) * 10:
                     break
                 continue
 
@@ -205,18 +230,21 @@ class DecisionOrchestrator:
                     source_end=round(src_start + seg_dur, 4),
                     timeline_start=round(timeline_pos, 4),
                     timeline_end=round(timeline_pos + seg_dur, 4),
-                    transition_type=prefs.transition_type,
+                    transition_type=trans_type,
+                    transition_duration=trans_dur,
                     energy_match_score=0.8,
                 )
                 clip_decisions.append(cd)
+                if len(clip_decisions) > 1 and trans_dur > 0:
+                    xfade_overlap += trans_dur
                 timeline_pos += seg_dur
                 last_clip_id = clip_id
             except Exception:
-                if idx > len(ordered_ids) * 3:
+                if idx > len(ordered_ids) * 10:
                     break
                 continue
 
-        total_duration = round(timeline_pos, 4) if clip_decisions else actual_target
+        total_duration = round(timeline_pos - xfade_overlap, 4) if clip_decisions else actual_target
 
         return EditDecisionList(
             clip_decisions=clip_decisions,
@@ -236,22 +264,40 @@ class DecisionOrchestrator:
 
         Duration/pacing are already handled by _create_fallback_edl, so this
         method only enforces transition type and trims to target if needed.
+
+        For ai_mix, per-clip transition types are preserved from the
+        LLM/fallback instead of being overridden.
         """
         if not edl.clip_decisions:
             return edl
 
+        is_ai_mix = prefs.transition_type == "ai_mix"
         adjusted = []
         timeline_pos = 0.0
+        xfade_overlap = 0.0
         target = prefs.target_duration or edl.total_duration
 
         for cd in edl.clip_decisions:
-            if timeline_pos >= target - 0.05:
+            if (timeline_pos - xfade_overlap) >= target - 0.05:
                 break
 
+            # For ai_mix, preserve the per-clip transition type;
+            # otherwise override with the user preference
+            if is_ai_mix:
+                trans_type = cd.transition_type
+                trans_dur = cd.transition_duration if cd.transition_duration > 0 else (
+                    _DEFAULT_TRANSITION_DURATION if trans_type != "cut" else 0.0
+                )
+            else:
+                trans_type = prefs.transition_type
+                trans_dur = _DEFAULT_TRANSITION_DURATION if trans_type != "cut" else 0.0
+
             dur = cd.source_end - cd.source_start
-            remaining = target - timeline_pos
-            if dur > remaining + 0.05:
-                dur = round(remaining, 4)
+            remaining = target - (timeline_pos - xfade_overlap)
+            # Account for xfade overlap when trimming the last clip
+            overlap_adj = trans_dur if adjusted and trans_dur > 0 else 0.0
+            if dur > remaining + overlap_adj + 0.05:
+                dur = round(remaining + overlap_adj, 4)
 
             try:
                 new_cd = ClipDecision(
@@ -260,16 +306,18 @@ class DecisionOrchestrator:
                     source_end=round(cd.source_start + dur, 4),
                     timeline_start=round(timeline_pos, 4),
                     timeline_end=round(timeline_pos + dur, 4),
-                    transition_type=prefs.transition_type,
-                    transition_duration=cd.transition_duration,
+                    transition_type=trans_type,
+                    transition_duration=trans_dur,
                     energy_match_score=cd.energy_match_score,
                 )
                 adjusted.append(new_cd)
+                if len(adjusted) > 1 and trans_dur > 0:
+                    xfade_overlap += trans_dur
                 timeline_pos += dur
             except Exception:
                 continue
 
-        total = round(timeline_pos, 4) if adjusted else edl.total_duration
+        total = round(timeline_pos - xfade_overlap, 4) if adjusted else edl.total_duration
         # trim_end must be absolute audio position, not just the timeline length
         audio_trim_end = round(edl.audio_decision.trim_start + total, 4)
         return EditDecisionList(

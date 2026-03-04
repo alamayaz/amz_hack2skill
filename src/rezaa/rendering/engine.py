@@ -111,18 +111,21 @@ class RenderingEngine:
                 }
             )
 
-        input_args, filter_complex = self.builder.build_filter_graph(
+        input_args, filter_complex, actual_video_dur = self.builder.build_filter_graph(
             clip_dicts,
             target_width=edl.target_width,
             target_height=edl.target_height,
             target_fps=edl.target_fps,
         )
 
+        # Sync audio trim to actual video duration (accounts for xfade overlap)
+        audio_trim_end = edl.audio_decision.trim_start + actual_video_dur
+
         # Build audio filter
         audio_filter = self.builder.build_audio_filter(
             str(audio_path),
             trim_start=edl.audio_decision.trim_start,
-            trim_end=edl.audio_decision.trim_end or edl.total_duration,
+            trim_end=audio_trim_end,
             fade_in=edl.audio_decision.fade_in,
             fade_out=edl.audio_decision.fade_out,
             volume=edl.audio_decision.volume,

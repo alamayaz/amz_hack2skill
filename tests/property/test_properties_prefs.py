@@ -60,7 +60,12 @@ class TestPreferenceProperties:
     def test_property_41_transition_type_applied(self, inputs):
         """Property 41: User-specified transition type is applied to all clips."""
         audio, videos = inputs
-        for trans in ["cut", "fade", "crossfade"]:
+        for trans in [
+            "cut", "fade", "crossfade",
+            "wipeleft", "wiperight", "slideleft", "slideright",
+            "fadeblack", "fadewhite", "dissolve", "zoomin",
+            "circleopen", "radial",
+        ]:
             agent = BeatClipAlignmentAgent()
             alignment = agent.align(audio, videos)
             orchestrator = DecisionOrchestrator(client=None)
@@ -104,3 +109,20 @@ class TestPreferenceProperties:
         if edl.clip_decisions:
             last_end = max(cd.timeline_end for cd in edl.clip_decisions)
             assert last_end <= target + 0.1
+
+    @given(inputs=generate_pref_inputs())
+    @settings(max_examples=30, deadline=15000)
+    def test_property_44_ai_mix_never_appears_as_clip_type(self, inputs):
+        """Property 44: ai_mix never appears as a clip-level transition_type."""
+        audio, videos = inputs
+        agent = BeatClipAlignmentAgent()
+        alignment = agent.align(audio, videos)
+        orchestrator = DecisionOrchestrator(client=None)
+        edl = orchestrator.orchestrate(
+            audio,
+            videos,
+            alignment,
+            UserPreferences(transition_type="ai_mix"),
+        )
+        for cd in edl.clip_decisions:
+            assert cd.transition_type != "ai_mix"

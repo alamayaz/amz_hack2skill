@@ -5,6 +5,7 @@ import re
 
 from rezaa.models.edl import ClipDecision, EditDecisionList
 from rezaa.models.errors import ProcessingError
+from rezaa.models.preferences import TRANSITION_TYPES
 
 
 def parse_llm_response(response_text: str) -> dict:
@@ -39,13 +40,18 @@ def validate_edl(edl_data: dict, expected_duration: float) -> EditDecisionList:
     clip_decisions = []
     for cd_data in edl_data.get("clip_decisions", []):
         try:
+            # Validate transition_type; fallback to "cut" if unknown
+            raw_transition = cd_data.get("transition_type", "cut")
+            if raw_transition not in TRANSITION_TYPES:
+                raw_transition = "cut"
+
             cd = ClipDecision(
                 clip_id=cd_data["clip_id"],
                 source_start=cd_data["source_start"],
                 source_end=cd_data["source_end"],
                 timeline_start=cd_data["timeline_start"],
                 timeline_end=cd_data["timeline_end"],
-                transition_type=cd_data.get("transition_type", "cut"),
+                transition_type=raw_transition,
                 transition_duration=cd_data.get("transition_duration", 0.0),
                 energy_match_score=cd_data.get("energy_match_score", 0.0),
             )

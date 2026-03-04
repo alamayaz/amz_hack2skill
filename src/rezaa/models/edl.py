@@ -11,7 +11,11 @@ class ClipDecision(BaseModel):
     source_end: float = Field(..., ge=0, description="End time in source clip")
     timeline_start: float = Field(..., ge=0, description="Start time in output timeline")
     timeline_end: float = Field(..., ge=0, description="End time in output timeline")
-    transition_type: str = Field(default="cut", description="Transition: cut, fade, crossfade")
+    transition_type: str = Field(
+        default="cut",
+        description="Transition: cut, fade, crossfade, wipeleft, wiperight, "
+        "slideleft, slideright, fadeblack, fadewhite, dissolve, zoomin, circleopen, radial",
+    )
     transition_duration: float = Field(default=0.0, ge=0, description="Transition duration")
     energy_match_score: float = Field(default=0.0, ge=0, le=1)
 

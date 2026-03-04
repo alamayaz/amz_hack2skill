@@ -421,6 +421,19 @@ class TestUserPreferences:
         with pytest.raises(Exception):
             UserPreferences(audio_start=-1.0)
 
+    def test_new_transition_types_accepted(self):
+        for t in [
+            "wipeleft", "wiperight", "slideleft", "slideright",
+            "fadeblack", "fadewhite", "dissolve", "zoomin",
+            "circleopen", "radial", "ai_mix",
+        ]:
+            prefs = UserPreferences(transition_type=t)
+            assert prefs.transition_type == t
+
+    def test_unknown_transition_type_rejected(self):
+        with pytest.raises(Exception):
+            UserPreferences(transition_type="spin")
+
 
 # --- Pipeline ---
 

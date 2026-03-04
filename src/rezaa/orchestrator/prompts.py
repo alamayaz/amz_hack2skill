@@ -2,6 +2,8 @@
 
 import json
 
+from rezaa.models.preferences import TRANSITION_TYPES
+
 SYSTEM_PROMPT = (
     "You are an expert video editor AI. You receive structured "
     "analysis data about audio beats, video clips, and an alignment "
@@ -14,7 +16,12 @@ SYSTEM_PROMPT = (
     "3. Source duration must match timeline duration within 0.1s tolerance\n"
     "4. High-energy beats should use high-energy clips\n"
     "5. Apply user preferences for pacing, style, and transitions\n"
-    "6. Cover as much of the audio duration as possible\n"
+    "6. You MUST fill the entire target_duration with clips — no gaps, no short EDLs. "
+    "Add more clips until the timeline reaches the target.\n"
+    "7. When choosing transitions, use a variety of types for visual interest. "
+    "Match transition style to the mood: use fadeblack/fadewhite for calm moments, "
+    "wipeleft/wiperight for energetic sections, dissolve for emotional transitions, "
+    "and cuts for fast-paced beats.\n"
     "\n"
     "Respond with ONLY valid JSON matching the provided schema."
 )
@@ -46,7 +53,7 @@ def build_json_schema() -> dict:
                         "timeline_end": {"type": "number", "minimum": 0},
                         "transition_type": {
                             "type": "string",
-                            "enum": ["cut", "fade", "crossfade"],
+                            "enum": list(TRANSITION_TYPES),
                         },
                         "transition_duration": {"type": "number", "minimum": 0},
                         "energy_match_score": {
@@ -93,6 +100,13 @@ def build_orchestration_prompt(
 {json.dumps(user_preferences, indent=2)}
 ```
 """
+        td = user_preferences.get("target_duration")
+        if td:
+            prompt += (
+                f"\n**CRITICAL: The reel MUST be exactly {td} seconds long. "
+                f"Keep adding clips until the timeline reaches {td}s. "
+                f"Do NOT stop early.**\n"
+            )
 
     prompt += f"""
 ## Output Schema
@@ -105,5 +119,13 @@ Generate a valid EDL JSON that synchronizes the video clips to the music beats. 
 - No consecutive clips use the same clip_id
 - Source durations match timeline durations within 0.1s
 - Apply user preferences for pacing and transitions"""
+
+    # When ai_mix is requested, tell the LLM to pick diverse transitions
+    if user_preferences and user_preferences.get("transition_type") == "ai_mix":
+        prompt += (
+            "\n- IMPORTANT: Pick the best transition type for each clip from the "
+            "available types. Use a diverse mix of transitions that match the mood "
+            "and energy of each clip transition point."
+        )
 
     return prompt
