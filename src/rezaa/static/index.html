@@ -3,13 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Rezaa AI - Video Editor</title>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>RezaaAI - Video Editor</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0f1117;
-    color: #e1e4e8;
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(180deg, #2d1754 0%, #4a2080 30%, #e8dff5 70%, #ffffff 100%);
+    background-attachment: fixed;
+    color: #2d1b5e;
     min-height: 100vh;
     display: flex;
     justify-content: center;
@@ -17,14 +19,60 @@
   }
   .container { max-width: 640px; width: 100%; }
   h1 { font-size: 1.75rem; text-align: center; margin-bottom: .25rem; }
-  h1 span { color: #7c3aed; }
-  .subtitle { text-align: center; color: #8b949e; font-size: .9rem; margin-bottom: 2rem; }
+  .title-glass {
+    position: relative;
+    display: inline-block;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    font-size: 3rem;
+    letter-spacing: 0.04em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255, 255, 255, 0.4);
+    filter: url(#liquid-distort);
+    text-shadow:
+      0 0 20px rgba(167, 139, 250, 0.4),
+      0 0 40px rgba(139, 92, 246, 0.15);
+  }
+  .title-glass::before {
+    content: attr(data-text);
+    position: absolute;
+    left: 0; top: 0;
+    color: transparent;
+    -webkit-text-stroke: 0;
+    text-shadow:
+      0 -1px 1px rgba(255, 255, 255, 0.7),
+      0 1px 2px rgba(139, 92, 246, 0.3);
+  }
+  .title-glass::after {
+    content: attr(data-text);
+    position: absolute;
+    left: 0; top: 0;
+    background: linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.35) 0%,
+      rgba(167, 139, 250, 0.15) 50%,
+      rgba(139, 92, 246, 0.25) 100%
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    -webkit-text-stroke: 0;
+  }
+  .subtitle { text-align: center; color: rgba(45, 27, 94, 0.7); font-size: .9rem; margin-bottom: 2rem; }
   .step {
-    background: #161b22;
-    border: 1px solid #30363d;
-    border-radius: 12px;
+    position: relative;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-top: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 20px;
     padding: 1.25rem;
     margin-bottom: 1rem;
+    box-shadow:
+      0 8px 32px rgba(100, 60, 180, 0.12),
+      inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    overflow: hidden;
   }
   .step-header {
     display: flex;
@@ -35,8 +83,12 @@
     font-size: 1rem;
   }
   .step-number {
-    background: #7c3aed;
+    background: rgba(167, 139, 250, 0.3);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.4);
     color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
     width: 24px; height: 24px;
     border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -44,18 +96,23 @@
     flex-shrink: 0;
   }
   .drop-zone {
-    border: 2px dashed #30363d;
-    border-radius: 8px;
+    border: 2px dashed rgba(255, 255, 255, 0.4);
+    border-radius: 12px;
     padding: 2rem 1rem;
     text-align: center;
     cursor: pointer;
-    transition: border-color .2s, background .2s;
-    color: #8b949e;
+    transition: border-color .2s, background .2s, box-shadow .2s;
+    color: rgba(45, 27, 94, 0.7);
     font-size: .9rem;
+    background: rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
   }
   .drop-zone:hover, .drop-zone.drag-over {
-    border-color: #7c3aed;
-    background: rgba(124,58,237,.08);
+    border-color: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 0 20px rgba(167,139,250,0.15);
   }
   .drop-zone input { display: none; }
   .status-msg {
@@ -63,71 +120,90 @@
     font-size: .85rem;
     min-height: 1.2em;
   }
-  .status-msg.ok { color: #3fb950; }
-  .status-msg.err { color: #f85149; }
-  label { display: block; font-size: .85rem; color: #8b949e; margin-bottom: .25rem; }
+  .status-msg.ok { color: #16a34a; }
+  .status-msg.err { color: #dc2626; }
+  label { display: block; font-size: .85rem; color: rgba(45, 27, 94, 0.7); margin-bottom: .25rem; }
   select, input[type="number"] {
     width: 100%;
     padding: .5rem .75rem;
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    color: #e1e4e8;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 12px;
+    color: #2d1b5e;
     font-size: .9rem;
     margin-bottom: .75rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
-  select:focus, input[type="number"]:focus { outline: none; border-color: #7c3aed; }
+  select:focus, input[type="number"]:focus { outline: none; border-color: rgba(255, 255, 255, 0.7); box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 0 0 3px rgba(167, 139, 250, 0.2), 0 0 16px rgba(167, 139, 250, 0.1); }
+  select option { background: #fff; color: #2d1b5e; }
   .pref-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 .75rem; }
   button.primary {
     width: 100%;
     padding: .75rem;
-    background: #7c3aed;
-    color: #fff;
+    background: linear-gradient(135deg, #7c3aed, #6d28d9);
     border: none;
-    border-radius: 8px;
+    color: #fff;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    border-radius: 12px;
     font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
-    transition: opacity .2s;
+    transition: all .2s;
+    box-shadow:
+      0 4px 16px rgba(124, 58, 237, 0.4),
+      0 2px 6px rgba(0, 0, 0, 0.15);
   }
-  button.primary:hover { opacity: .9; }
+  button.primary:hover { background: linear-gradient(135deg, #8b5cf6, #7c3aed); box-shadow: 0 6px 24px rgba(124, 58, 237, 0.5), 0 3px 8px rgba(0,0,0,0.2); transform: translateY(-1px); }
   button.primary:disabled { opacity: .5; cursor: not-allowed; }
   .progress-section { display: none; }
   .progress-section.visible { display: block; }
   .progress-bar-outer {
-    background: #21262d;
-    border-radius: 6px;
-    height: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    height: 12px;
     overflow: hidden;
     margin: .75rem 0 .5rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
   .progress-bar-inner {
     height: 100%;
     width: 0%;
-    background: linear-gradient(90deg, #7c3aed, #a78bfa);
+    background: linear-gradient(90deg, rgba(167, 139, 250, 0.5), rgba(196, 181, 253, 0.6));
     border-radius: 6px;
     transition: width .4s ease;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.3);
   }
   .progress-label {
     display: flex;
     justify-content: space-between;
     font-size: .85rem;
-    color: #8b949e;
+    color: rgba(45, 27, 94, 0.7);
   }
   .download-section { display: none; text-align: center; margin-top: 1rem; }
   .download-section.visible { display: block; }
   .download-section a {
     display: inline-block;
     padding: .75rem 2rem;
-    background: #238636;
+    background: rgba(22, 163, 74, 0.3);
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
     color: #fff;
-    border-radius: 8px;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    border-radius: 12px;
     text-decoration: none;
     font-weight: 600;
     font-size: 1rem;
-    transition: opacity .2s;
+    transition: all .2s;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 4px 16px rgba(22, 163, 74, 0.15);
   }
-  .download-section a:hover { opacity: .9; }
+  .download-section a:hover { background: rgba(22, 163, 74, 0.4); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 6px 20px rgba(22, 163, 74, 0.2); }
 
   /* Audio section slider */
   .audio-section-step { display: none; }
@@ -142,7 +218,7 @@
     align-items: center;
     gap: .35rem;
     cursor: pointer;
-    color: #e1e4e8;
+    color: #2d1b5e;
     font-size: .9rem;
   }
   .audio-mode-toggle input[type="radio"] { accent-color: #7c3aed; }
@@ -150,13 +226,17 @@
   .waveform-container.visible { display: block; }
   .waveform-wrapper {
     position: relative;
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    height: 100px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-top: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 12px;
+    height: 80px;
     overflow: hidden;
     touch-action: none;
     cursor: grab;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
   .waveform-wrapper:active { cursor: grabbing; }
   #waveform-canvas { display: block; width: 100%; height: 100%; }
@@ -164,16 +244,17 @@
     position: absolute;
     top: 0;
     height: 100%;
-    background: rgba(124, 58, 237, 0.25);
-    border-left: 2px solid #7c3aed;
-    border-right: 2px solid #7c3aed;
+    background: rgba(255, 255, 255, 0.18);
+    border-left: 2px solid #fff;
+    border-right: 2px solid #fff;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15), 0 0 8px rgba(255, 255, 255, 0.3);
     pointer-events: none;
   }
   .waveform-times {
     display: flex;
     justify-content: space-between;
     font-size: .8rem;
-    color: #8b949e;
+    color: rgba(45, 27, 94, 0.6);
     margin-top: .35rem;
   }
   .waveform-actions {
@@ -183,15 +264,33 @@
   }
   button.secondary-btn {
     padding: .4rem .75rem;
-    background: transparent;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
     color: #7c3aed;
-    border: 1px solid #7c3aed;
-    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.4);
+    border-top: 1px solid rgba(255, 255, 255, 0.6);
+    border-radius: 10px;
     font-size: .85rem;
     cursor: pointer;
-    transition: background .2s, color .2s;
+    transition: all .2s;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
-  button.secondary-btn:hover { background: rgba(124,58,237,.12); }
+  button.secondary-btn:hover { background: rgba(255, 255, 255, 0.25); box-shadow: inset 0 1px 0 rgba(255,255,255,0.5), 0 0 12px rgba(167,139,250,0.1); }
+  .waveform-legend {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    font-size: .75rem;
+    color: rgba(45, 27, 94, 0.5);
+    margin-top: .25rem;
+  }
+  .legend-dot {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+  }
+  .legend-dot.high { background: rgba(139, 92, 246, 0.9); }
+  .legend-dot.low { background: rgba(167, 139, 250, 0.35); }
   .clip-duration-row {
     display: flex;
     align-items: center;
@@ -202,24 +301,32 @@
     margin-bottom: 0;
     white-space: nowrap;
     font-size: .85rem;
-    color: #8b949e;
+    color: rgba(45, 27, 94, 0.7);
   }
   .clip-duration-row input[type="number"] {
     width: 80px;
     margin-bottom: 0;
     padding: .35rem .5rem;
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    color: #e1e4e8;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 12px;
+    color: #2d1b5e;
     font-size: .85rem;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4);
   }
 </style>
 </head>
 <body>
+<svg style="position:absolute;width:0;height:0">
+  <filter id="liquid-distort">
+    <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="3" result="noise"/>
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
 <div class="container">
-  <h1><span>Rezaa</span> AI</h1>
-  <p class="subtitle">Intelligent multi-agent video editing</p>
+  <h1><span class="title-glass" data-text="RezaaAI">RezaaAI</span></h1>
 
   <!-- Step 1: Upload Audio -->
   <div class="step">
@@ -250,6 +357,10 @@
       <div class="waveform-times">
         <span id="waveform-start-time">0:00</span>
         <span id="waveform-end-time">0:00</span>
+      </div>
+      <div class="waveform-legend">
+        <span class="legend-dot high"></span> High energy
+        <span class="legend-dot low"></span> Low energy
       </div>
       <div class="waveform-actions">
         <button class="secondary-btn" id="preview-btn" type="button">Preview</button>
@@ -353,6 +464,7 @@
   let dragStartOffset = 0;
   let previewTimeout = null;
   let isPreviewPlaying = false;
+  let audioAnalysis = null;
 
   const $ = id => document.getElementById(id);
 
@@ -419,6 +531,57 @@
     updateCreateBtn();
   }
 
+  // --- Energy & beat analysis (per-bar precision) ---
+  function computeEnergyAndBeats(audioBuffer, barCount) {
+    const data = audioBuffer.getChannelData(0);
+    const samplesPerBar = Math.floor(data.length / barCount);
+
+    // RMS energy per bar — matches 1:1 with rendered bars
+    const rawEnergy = new Float32Array(barCount);
+    for (let i = 0; i < barCount; i++) {
+      let sum = 0;
+      const start = i * samplesPerBar;
+      const end = Math.min(start + samplesPerBar, data.length);
+      for (let j = start; j < end; j++) sum += data[j] * data[j];
+      rawEnergy[i] = Math.sqrt(sum / (end - start));
+    }
+
+    // Normalize with a local sliding window for contrast
+    // Use a small window to get local max, then blend with global max
+    const windowSize = Math.max(3, Math.floor(barCount / 30));
+    const localMax = new Float32Array(barCount);
+    for (let i = 0; i < barCount; i++) {
+      let mx = 0;
+      const lo = Math.max(0, i - windowSize);
+      const hi = Math.min(barCount - 1, i + windowSize);
+      for (let j = lo; j <= hi; j++) {
+        if (rawEnergy[j] > mx) mx = rawEnergy[j];
+      }
+      localMax[i] = mx;
+    }
+
+    const globalMax = Math.max(...rawEnergy);
+    const energy = new Float32Array(barCount);
+    for (let i = 0; i < barCount; i++) {
+      // Blend: 60% local normalization + 40% global for contrast
+      const localNorm = localMax[i] > 0 ? rawEnergy[i] / localMax[i] : 0;
+      const globalNorm = globalMax > 0 ? rawEnergy[i] / globalMax : 0;
+      energy[i] = localNorm * 0.6 + globalNorm * 0.4;
+    }
+
+    // Beat detection: peaks in energy derivative above threshold
+    const beats = new Set();
+    for (let i = 2; i < barCount - 1; i++) {
+      const diff = energy[i] - energy[i - 1];
+      const prevDiff = energy[i - 1] - energy[i - 2];
+      if (diff > 0.06 && prevDiff <= diff * 0.5 && energy[i] > 0.45) {
+        beats.add(i);
+      }
+    }
+
+    return { energy, beats };
+  }
+
   // --- Waveform loading ---
   async function loadAudioForWaveform(jid) {
     pausePreview();
@@ -453,38 +616,93 @@
     }
   }
 
-  // --- Waveform drawing ---
+  // --- Rounded rect helper (fallback for browsers without roundRect) ---
+  function drawRoundedRect(ctx, x, y, w, h, r) {
+    if (ctx.roundRect) {
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, r);
+    } else {
+      r = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + w - r, y);
+      ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+      ctx.lineTo(x + w, y + h - r);
+      ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      ctx.lineTo(x + r, y + h);
+      ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
+      ctx.closePath();
+    }
+  }
+
+  // --- Waveform drawing (Instagram-style) ---
   function drawWaveform() {
     if (!audioBuffer) return;
     const canvas = $('waveform-canvas');
     const wrapper = $('waveform-wrapper');
     const w = wrapper.clientWidth;
     const h = wrapper.clientHeight;
-    canvas.width = w * (window.devicePixelRatio || 1);
-    canvas.height = h * (window.devicePixelRatio || 1);
+    if (w === 0 || h === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
-
     const ctx = canvas.getContext('2d');
-    ctx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, w, h);
 
     const data = audioBuffer.getChannelData(0);
-    const step = Math.ceil(data.length / w);
+    const barW = 2, gap = 1, barStep = barW + gap;
+    const barCount = Math.floor(w / barStep);
+    if (barCount <= 0) return;
+    const samplesPerBar = Math.floor(data.length / barCount);
     const mid = h / 2;
+    const maxBarH = mid - 2;
 
-    ctx.fillStyle = '#30363d';
-    for (let i = 0; i < w; i++) {
-      let min = 1, max = -1;
-      const start = i * step;
-      const end = Math.min(start + step, data.length);
+    // Recompute energy at bar-level resolution for precision
+    audioAnalysis = computeEnergyAndBeats(audioBuffer, barCount);
+    const analysis = audioAnalysis;
+
+    for (let i = 0; i < barCount; i++) {
+      // Compute peak amplitude for this bar
+      let peak = 0;
+      const start = i * samplesPerBar;
+      const end = Math.min(start + samplesPerBar, data.length);
       for (let j = start; j < end; j++) {
-        if (data[j] < min) min = data[j];
-        if (data[j] > max) max = data[j];
+        const abs = Math.abs(data[j]);
+        if (abs > peak) peak = abs;
       }
-      const barTop = mid + min * mid;
-      const barH = (max - min) * mid;
-      ctx.fillRect(i, barTop, 1, Math.max(1, barH));
+
+      const energy = analysis.energy[i] || 0;
+      const barH = Math.max(1, peak * maxBarH);
+
+      // Color: smooth gradient from dim cool purple to bright vivid purple
+      // energy 0→1 maps through: dim lavender → medium → bright violet
+      const t = energy;
+      const r = Math.round(167 - 28 * t);   // 167 → 139
+      const g = Math.round(139 - 47 * t);   // 139 → 92
+      const b = 250 - Math.round(4 * t);    // 250 → 246
+      const a = 0.2 + 0.8 * t;              // 0.2 → 1.0
+
+      const isBeat = analysis.beats.has(i);
+      const x = i * barStep;
+
+      if (isBeat) {
+        ctx.save();
+        ctx.shadowColor = 'rgba(167, 139, 250, 0.7)';
+        ctx.shadowBlur = 8;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, 1)`;
+        drawRoundedRect(ctx, x, mid - barH, barW, barH * 2, 1);
+        ctx.fill();
+        ctx.restore();
+      } else {
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${a.toFixed(2)})`;
+        drawRoundedRect(ctx, x, mid - barH, barW, barH * 2, 1);
+        ctx.fill();
+      }
     }
   }
 
@@ -575,6 +793,8 @@
       audioMode = this.value;
       if (audioMode === 'manual') {
         $('waveform-container').classList.add('visible');
+        // Redraw now that container is visible (has dimensions)
+        requestAnimationFrame(function() { drawWaveform(); updateSelectionOverlay(); });
       } else {
         $('waveform-container').classList.remove('visible');
         audioStartOffset = 0;
