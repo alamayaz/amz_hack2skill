@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<title>RezaaAI - Performance Report</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(180deg, #2d1754 0%, #4a2080 30%, #a2a2a2 70%, #dadada 100%);
+    background-attachment: fixed;
+    color: #2d1b5e;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .container { max-width: 720px; width: 100%; }
+  h1 { font-size: 1.75rem; text-align: center; margin-bottom: .25rem; }
+  .title-glass {
+    position: relative;
+    display: inline-block;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 800;
+    font-size: 3rem;
+    letter-spacing: 0.04em;
+    color: transparent;
+    -webkit-text-stroke: 1px rgba(255, 255, 255, 0.4);
+    filter: url(#liquid-distort);
+    text-shadow: 0 0 20px rgba(167, 139, 250, 0.4), 0 0 40px rgba(139, 92, 246, 0.15);
+  }
+  .title-glass::before {
+    content: attr(data-text);
+    position: absolute; left: 0; top: 0;
+    color: transparent;
+    -webkit-text-stroke: 0;
+    text-shadow: 0 -1px 1px rgba(255, 255, 255, 0.7), 0 1px 2px rgba(139, 92, 246, 0.3);
+  }
+  .title-glass::after {
+    content: attr(data-text);
+    position: absolute; left: 0; top: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,0.35) 0%, rgba(167,139,250,0.15) 50%, rgba(139,92,246,0.25) 100%);
+    -webkit-background-clip: text; background-clip: text;
+    color: transparent; -webkit-text-stroke: 0;
+  }
+  .subtitle { text-align: center; color: rgba(45, 27, 94, 0.7); font-size: .9rem; margin-bottom: 2rem; }
+  .card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.18);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-top: 1px solid rgba(255, 255, 255, 0.7);
+    border-radius: 20px;
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 8px 32px rgba(100, 60, 180, 0.12), inset 0 1px 0 rgba(255,255,255,0.5);
+    overflow: hidden;
+  }
+  .card-title {
+    font-weight: 600; font-size: 1rem; margin-bottom: .75rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .card-icon {
+    background: rgba(167, 139, 250, 0.3);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.4);
+    color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .8rem; flex-shrink: 0;
+  }
+
+  /* Metric grid */
+  .metrics { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: .5rem; }
+  .metric { text-align: center; padding: .5rem; }
+  .metric-value { font-size: 1.4rem; font-weight: 700; color: #5b21b6; }
+  .metric-label { font-size: .75rem; color: rgba(45,27,94,0.6); margin-top: .15rem; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th { text-align: left; font-weight: 600; padding: .4rem .5rem; border-bottom: 1px solid rgba(139,92,246,0.2); color: rgba(45,27,94,0.7); }
+  td { padding: .4rem .5rem; border-bottom: 1px solid rgba(255,255,255,0.2); }
+
+  /* Timing bar chart */
+  .timing-bar-container { display: flex; height: 28px; border-radius: 8px; overflow: hidden; margin-bottom: .75rem; }
+  .timing-bar-segment {
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; font-weight: 600; color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    min-width: 2px; transition: width .3s;
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-block; padding: .2rem .6rem; border-radius: 8px;
+    font-size: .75rem; font-weight: 600;
+  }
+  .badge-llm { background: rgba(22,163,74,0.25); color: #16a34a; border: 1px solid rgba(22,163,74,0.3); }
+  .badge-fallback { background: rgba(234,179,8,0.25); color: #a16207; border: 1px solid rgba(234,179,8,0.3); }
+
+  /* Loading / error */
+  .loading { text-align: center; padding: 3rem 1rem; color: rgba(45,27,94,0.6); }
+  .spinner { display: inline-block; width: 32px; height: 32px; border: 3px solid rgba(139,92,246,0.2); border-top-color: #7c3aed; border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: .75rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .error-msg { text-align: center; padding: 2rem; color: #dc2626; }
+  .back-link { display: inline-block; margin-bottom: 1rem; color: rgba(255,255,255,0.7); text-decoration: none; font-size: .85rem; }
+  .back-link:hover { color: #fff; }
+
+  /* Stage colors */
+  .stage-audio { background: #7c3aed; }
+  .stage-video { background: #6d28d9; }
+  .stage-alignment { background: #8b5cf6; }
+  .stage-orchestration { background: #a78bfa; }
+  .stage-rendering { background: #c4b5fd; }
+</style>
+</head>
+<body>
+<svg style="position:absolute;width:0;height:0">
+  <filter id="liquid-distort">
+    <feTurbulence type="fractalNoise" baseFrequency="0.015" numOctaves="3" result="noise"/>
+    <feDisplacementMap in="SourceGraphic" in2="noise" scale="3" xChannelSelector="R" yChannelSelector="G"/>
+  </filter>
+</svg>
+<div class="container">
+  <a class="back-link" href="/">&larr; Back to Editor</a>
+  <h1><span class="title-glass" data-text="RezaaAI">RezaaAI</span></h1>
+  <p class="subtitle">Performance Report</p>
+
+  <div id="loading" class="loading">
+    <div class="spinner"></div>
+    <div>Loading benchmark data...</div>
+  </div>
+  <div id="error" class="error-msg" style="display:none"></div>
+  <div id="report" style="display:none">
+
+    <!-- Pipeline Summary -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">S</span> Pipeline Summary</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-total-time">-</div>
+          <div class="metric-label">Total Duration (s)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-stages">-</div>
+          <div class="metric-label">Stages Completed</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-job-id" style="font-size:.7rem;word-break:break-all">-</div>
+          <div class="metric-label">Job ID</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Timing Breakdown -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">T</span> Timing Breakdown</div>
+      <div class="timing-bar-container" id="timing-bar"></div>
+      <table id="timing-table">
+        <thead><tr><th>Stage</th><th>Duration (s)</th><th>% of Total</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Input Summary -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">I</span> Input Summary</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-audio-dur">-</div>
+          <div class="metric-label">Audio Duration (s)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-clip-count">-</div>
+          <div class="metric-label">Video Clips</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-total-video">-</div>
+          <div class="metric-label">Total Video (s)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio Metrics -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">A</span> Audio Metrics</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-bpm">-</div>
+          <div class="metric-label">BPM</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-beats">-</div>
+          <div class="metric-label">Beats</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-confidence">-</div>
+          <div class="metric-label">Confidence</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-beat-strength">-</div>
+          <div class="metric-label">Avg Beat Strength</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-drops">-</div>
+          <div class="metric-label">Drops</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video Metrics -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">V</span> Video Metrics</div>
+      <table id="video-table">
+        <thead><tr><th>Clip</th><th>Duration</th><th>Motion</th><th>Energy</th><th>Consistency</th><th>Usage</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- Alignment Metrics -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">L</span> Alignment Metrics</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-coverage">-</div>
+          <div class="metric-label">Coverage</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-energy-match">-</div>
+          <div class="metric-label">Avg Energy Match</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-clips-used">-</div>
+          <div class="metric-label">Clips Used</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-placements">-</div>
+          <div class="metric-label">Placements</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Orchestration -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">O</span> Orchestration</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-orch-method">-</div>
+          <div class="metric-label">Method</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-decisions">-</div>
+          <div class="metric-label">Clip Decisions</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-orch-dur">-</div>
+          <div class="metric-label">Output Duration (s)</div>
+        </div>
+      </div>
+      <div style="margin-top:.5rem;font-size:.85rem;">
+        <strong>Transitions:</strong> <span id="m-transitions">-</span>
+      </div>
+    </div>
+
+    <!-- Render Output -->
+    <div class="card">
+      <div class="card-title"><span class="card-icon">R</span> Render Output</div>
+      <div class="metrics">
+        <div class="metric">
+          <div class="metric-value" id="m-render-dur">-</div>
+          <div class="metric-label">Duration (s)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-file-size">-</div>
+          <div class="metric-label">File Size (MB)</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-codec">-</div>
+          <div class="metric-label">Codec</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-resolution">-</div>
+          <div class="metric-label">Resolution</div>
+        </div>
+        <div class="metric">
+          <div class="metric-value" id="m-fps">-</div>
+          <div class="metric-label">FPS</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+(function() {
+  const $ = id => document.getElementById(id);
+  const params = new URLSearchParams(window.location.search);
+  const jobId = params.get('job_id');
+
+  if (!jobId) {
+    $('loading').style.display = 'none';
+    $('error').style.display = 'block';
+    $('error').textContent = 'Missing job_id query parameter. Usage: benchmark.html?job_id=<id>';
+    return;
+  }
+
+  const stageColors = {
+    audio_analysis: 'stage-audio',
+    video_analysis: 'stage-video',
+    alignment: 'stage-alignment',
+    orchestration: 'stage-orchestration',
+    rendering: 'stage-rendering',
+  };
+
+  const stageLabels = {
+    audio_analysis: 'Audio',
+    video_analysis: 'Video',
+    alignment: 'Align',
+    orchestration: 'Orch',
+    rendering: 'Render',
+  };
+
+  function fmt(n, d) { return typeof n === 'number' ? n.toFixed(d === undefined ? 2 : d) : '-'; }
+  function pct(n) { return typeof n === 'number' ? (n * 100).toFixed(1) + '%' : '-'; }
+
+  fetch('/api/v1/benchmark/' + encodeURIComponent(jobId))
+    .then(r => {
+      if (!r.ok) return r.json().then(d => { throw new Error(d.message || d.detail || 'Request failed'); });
+      return r.json();
+    })
+    .then(render)
+    .catch(err => {
+      $('loading').style.display = 'none';
+      $('error').style.display = 'block';
+      $('error').textContent = err.message;
+    });
+
+  function render(d) {
+    $('loading').style.display = 'none';
+    $('report').style.display = 'block';
+
+    // Pipeline Summary
+    $('m-total-time').textContent = fmt(d.total_pipeline_duration_seconds);
+    $('m-stages').textContent = d.stage_timings ? d.stage_timings.length : 0;
+    $('m-job-id').textContent = d.job_id;
+
+    // Timing bar + table
+    const total = d.total_pipeline_duration_seconds || 1;
+    const bar = $('timing-bar');
+    const tbody = $('timing-table').querySelector('tbody');
+    bar.innerHTML = '';
+    tbody.innerHTML = '';
+    (d.stage_timings || []).forEach(function(st) {
+      const pctVal = (st.duration_seconds / total * 100);
+      const seg = document.createElement('div');
+      seg.className = 'timing-bar-segment ' + (stageColors[st.stage_name] || 'stage-audio');
+      seg.style.width = Math.max(pctVal, 2) + '%';
+      seg.textContent = pctVal > 8 ? (stageLabels[st.stage_name] || st.stage_name) : '';
+      seg.title = (stageLabels[st.stage_name] || st.stage_name) + ': ' + fmt(st.duration_seconds) + 's';
+      bar.appendChild(seg);
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + esc(stageLabels[st.stage_name] || st.stage_name) + '</td>'
+        + '<td>' + fmt(st.duration_seconds) + '</td>'
+        + '<td>' + fmt(pctVal, 1) + '%</td>';
+      tbody.appendChild(tr);
+    });
+
+    // Input Summary
+    var inp = d.input_summary || {};
+    $('m-audio-dur').textContent = fmt(inp.audio_duration_seconds);
+    $('m-clip-count').textContent = inp.num_clips || 0;
+    $('m-total-video').textContent = fmt(inp.total_video_duration_seconds);
+
+    // Audio Metrics
+    var am = d.audio_metrics || {};
+    $('m-bpm').textContent = fmt(am.bpm, 1);
+    $('m-beats').textContent = am.beat_count || 0;
+    $('m-confidence').textContent = pct(am.confidence);
+    $('m-beat-strength').textContent = fmt(am.beat_strength_avg);
+    $('m-drops').textContent = am.drop_count || 0;
+
+    // Video Metrics
+    var vtbody = $('video-table').querySelector('tbody');
+    vtbody.innerHTML = '';
+    (d.video_metrics || []).forEach(function(v) {
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>' + esc(v.clip_id) + '</td>'
+        + '<td>' + fmt(v.duration) + '</td>'
+        + '<td>' + fmt(v.motion_score) + '</td>'
+        + '<td>' + fmt(v.energy_score) + '</td>'
+        + '<td>' + fmt(v.temporal_consistency) + '</td>'
+        + '<td>' + esc(v.recommended_usage) + '</td>';
+      vtbody.appendChild(tr);
+    });
+
+    // Alignment
+    var al = d.alignment_metrics || {};
+    $('m-coverage').textContent = pct(al.coverage);
+    $('m-energy-match').textContent = pct(al.average_energy_match);
+    $('m-clips-used').textContent = al.clips_used || 0;
+    $('m-placements').textContent = al.total_placements || 0;
+
+    // Orchestration
+    var om = d.orchestration_metrics || {};
+    var methodEl = $('m-orch-method');
+    if (om.method === 'llm') {
+      methodEl.innerHTML = '<span class="badge badge-llm">LLM</span>';
+    } else if (om.method === 'fallback') {
+      methodEl.innerHTML = '<span class="badge badge-fallback">Fallback</span>';
+    } else {
+      methodEl.textContent = om.method || '-';
+    }
+    $('m-decisions').textContent = om.clip_decisions_count || 0;
+    $('m-orch-dur').textContent = fmt(om.total_duration);
+    $('m-transitions').textContent = (om.transition_types_used || []).join(', ') || '-';
+
+    // Render
+    var rm = d.render_metrics || {};
+    $('m-render-dur').textContent = fmt(rm.output_duration);
+    $('m-file-size').textContent = fmt(rm.file_size_mb);
+    $('m-codec').textContent = rm.video_codec || '-';
+    $('m-resolution').textContent = rm.resolution || '-';
+    $('m-fps').textContent = fmt(rm.fps, 0);
+  }
+
+  function esc(s) {
+    var el = document.createElement('span');
+    el.textContent = s || '';
+    return el.innerHTML;
+  }
+})();
+</script>
+</body>
+</html>

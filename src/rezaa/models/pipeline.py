@@ -37,3 +37,5 @@ class PipelineState(BaseModel):
     audio_path: str | None = None
     video_paths: list[str] = Field(default_factory=list)
     output_path: str | None = None
+    stage_timings: dict[str, float] = Field(default_factory=dict)
+    benchmark_report: dict | None = None

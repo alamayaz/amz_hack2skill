@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from rezaa.api.middleware import rezaa_error_handler
-from rezaa.api.routes import download, process, status, upload
+from rezaa.api.routes import benchmark, download, process, status, upload
 from rezaa.models.errors import RezaaError
 
 
@@ -36,6 +36,7 @@ def create_app() -> FastAPI:
     app.include_router(process.router)
     app.include_router(status.router)
     app.include_router(download.router)
+    app.include_router(benchmark.router)
 
     @app.get("/health")
     async def health():

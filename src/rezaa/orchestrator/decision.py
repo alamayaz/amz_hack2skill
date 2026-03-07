@@ -46,6 +46,7 @@ class DecisionOrchestrator:
                 edl = self._call_llm(audio_analysis, video_analyses, alignment, prefs)
                 edl = self.apply_user_preferences(edl, prefs)
                 if edl.total_duration >= target * 0.9:
+                    edl.edl_metadata["orchestration_method"] = "llm"
                     return edl
                 logger.warning(
                     "LLM EDL too short (%.1fs vs %.1fs target), using fallback",
@@ -57,6 +58,7 @@ class DecisionOrchestrator:
         # Fallback
         edl = self._create_fallback_edl(audio_analysis, video_analyses, alignment, prefs)
         edl = self.apply_user_preferences(edl, prefs)
+        edl.edl_metadata["orchestration_method"] = "fallback"
         return edl
 
     def _call_llm(
@@ -318,11 +320,16 @@ class DecisionOrchestrator:
                 continue
 
         total = round(timeline_pos - xfade_overlap, 4) if adjusted else edl.total_duration
-        # trim_end must be absolute audio position, not just the timeline length
-        audio_trim_end = round(edl.audio_decision.trim_start + total, 4)
+        # Apply manual audio_start if provided; otherwise keep the LLM/fallback value
+        audio_trim_start = edl.audio_decision.trim_start
+        if prefs.audio_start is not None:
+            audio_trim_start = prefs.audio_start
+        audio_trim_end = round(audio_trim_start + total, 4)
         return EditDecisionList(
             clip_decisions=adjusted,
-            audio_decision=edl.audio_decision.model_copy(update={"trim_end": audio_trim_end}),
+            audio_decision=edl.audio_decision.model_copy(
+                update={"trim_start": audio_trim_start, "trim_end": audio_trim_end}
+            ),
             total_duration=total,
             target_fps=edl.target_fps,
             target_width=edl.target_width,
