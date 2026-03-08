@@ -148,6 +148,8 @@ class RenderingEngine:
 
         cmd.extend(
             [
+                "-t",
+                f"{actual_video_dur:.4f}",
                 "-c:v",
                 self.settings.output_video_codec,
                 "-crf",

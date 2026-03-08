@@ -1,15 +1,16 @@
 """Decision orchestrator — LLM-based editing decision maker."""
 
 import logging
+import math
 
 from openai import OpenAI
 
 from rezaa.config import get_settings
-from rezaa.models.alignment import AlignmentOutput
+from rezaa.models.alignment import AlignmentOutput, ClipPlacement
 from rezaa.models.audio import AudioAnalysisOutput
 from rezaa.models.edl import AudioDecision, ClipDecision, EditDecisionList
 from rezaa.models.preferences import XFADE_TRANSITIONS, UserPreferences
-from rezaa.models.video import VideoAnalysisOutput
+from rezaa.models.video import Segment, VideoAnalysisOutput
 from rezaa.orchestrator.parser import parse_llm_response, validate_edl
 from rezaa.orchestrator.prompts import SYSTEM_PROMPT, build_orchestration_prompt
 
@@ -130,6 +131,61 @@ class DecisionOrchestrator:
 
         return round(best_start, 4)
 
+    @staticmethod
+    def _get_audio_energy_at(
+        energy_curve: list[tuple[float, float]], timestamp: float,
+    ) -> float:
+        """Return interpolated audio energy at *timestamp*."""
+        if not energy_curve:
+            return 0.5
+        # Find nearest point
+        best_e = energy_curve[0][1]
+        best_dist = abs(energy_curve[0][0] - timestamp)
+        for ts, e in energy_curve:
+            d = abs(ts - timestamp)
+            if d < best_dist:
+                best_dist = d
+                best_e = e
+        return best_e
+
+    @staticmethod
+    def _find_best_segment_for_energy(
+        segments: list[Segment],
+        target_energy: float,
+        min_dur: float,
+        clip_duration: float,
+        used_ranges: list[tuple[float, float]],
+    ) -> tuple[float, float, float] | None:
+        """Pick the best segment matching *target_energy*.
+
+        Returns ``(start, end, energy_match_score)`` or ``None``.
+        Prefers segments that don't overlap previously used ranges.
+        """
+        if not segments:
+            return None
+
+        sigma = 0.3
+        candidates: list[tuple[float, float, float, bool]] = []
+        for seg in segments:
+            seg_len = seg.end - seg.start
+            if seg_len < min_dur:
+                continue
+            diff = abs(seg.energy_score - target_energy)
+            score = math.exp(-(diff ** 2) / (2 * sigma ** 2))
+            # Check overlap with already-used ranges
+            overlaps = any(
+                seg.start < ue and seg.end > us for us, ue in used_ranges
+            )
+            candidates.append((seg.start, min(seg.start + min_dur, seg.end), score, overlaps))
+
+        if not candidates:
+            return None
+
+        # Prefer non-overlapping, then highest score
+        candidates.sort(key=lambda c: (c[3], -c[2]))
+        best = candidates[0]
+        return (best[0], best[1], best[2])
+
     def _create_fallback_edl(
         self,
         audio_analysis: AudioAnalysisOutput,
@@ -137,12 +193,13 @@ class DecisionOrchestrator:
         alignment: AlignmentOutput,
         prefs: UserPreferences,
     ) -> EditDecisionList:
-        """Rule-based fallback EDL that fills the full target duration.
+        """Beat-aligned fallback EDL using alignment placements and best segments.
 
-        Cycles through video clips to produce back-to-back clip decisions
-        covering the entire audio (or user-specified target) duration.
-        Picks the most energetic section of the audio rather than always
-        starting from the beginning.
+        Advances along the timeline, snapping cut boundaries to the nearest
+        beat when possible.  For each segment it picks the best clip using:
+        1. Alignment placement data (beat-matched, energy-scored)
+        2. Best-segment energy matching from video analysis
+        3. Round-robin with source stride as a last resort
         """
         audio_dur = audio_analysis.features.duration
         target = prefs.target_duration or audio_dur
@@ -158,46 +215,73 @@ class DecisionOrchestrator:
         else:
             audio_start = self._find_best_audio_window(audio_analysis, target)
         audio_end = round(min(audio_start + target, audio_dur), 4)
-        # Actual reel length may be shorter if audio isn't long enough
         actual_target = round(audio_end - audio_start, 4)
 
-        # Determine per-clip duration from pacing
+        # Pacing → per-segment duration
         pacing_defaults = {"fast": 1.0, "medium": 2.0, "slow": 4.0}
         clip_dur = pacing_defaults.get(prefs.pacing, 2.0)
 
-        # Build a round-robin order; prefer alignment order if available
-        if alignment.placements:
-            ordered_ids = []
-            for p in sorted(alignment.placements, key=lambda p: p.align_to_beat):
-                if not ordered_ids or ordered_ids[-1] != p.clip_id:
-                    ordered_ids.append(p.clip_id)
-            if not ordered_ids:
-                ordered_ids = [va.clip_id for va in video_analyses]
-        else:
-            ordered_ids = [va.clip_id for va in video_analyses]
-
-        # Map clip_id → max source duration
+        # Lookup maps
         clip_durations = {va.clip_id: va.features.duration for va in video_analyses}
+        clip_segments: dict[str, list[Segment]] = {
+            va.clip_id: sorted(va.features.best_segments, key=lambda s: -s.energy_score)
+            for va in video_analyses
+        }
+        energy_curve = audio_analysis.features.energy_curve
 
-        # Determine transition type per clip for ai_mix
-        is_ai_mix = prefs.transition_type == "ai_mix"
+        # Single-clip fallback: auto-upgrade "cut" to "ai_mix" for visible edits
+        if len(video_analyses) == 1 and prefs.transition_type == "cut":
+            is_ai_mix = True
+        else:
+            is_ai_mix = prefs.transition_type == "ai_mix"
 
-        clip_decisions = []
+        # ── Alignment placements shifted into the window, sorted by beat ──
+        window_placements: list[tuple[float, ClipPlacement]] = []
+        for p in alignment.placements:
+            rel = round(p.align_to_beat - audio_start, 4)
+            if 0 <= rel < actual_target:
+                window_placements.append((rel, p))
+        window_placements.sort(key=lambda x: x[0])
+
+        all_clip_ids = [va.clip_id for va in video_analyses]
+        max_reuse = prefs.max_clip_reuse
+
+        # ── Helpers ──────────────────────────────────────────────────────
+        def _reuse_count(cid: str) -> int:
+            return sum(1 for cd in clip_decisions if cd.clip_id == cid)
+
+        def _is_available(cid: str) -> bool:
+            return _reuse_count(cid) < max_reuse
+
+        # ── Thin placements: skip any < clip_dur*0.5 from previous ───────
+        thinned: list[tuple[float, ClipPlacement]] = []
+        last_accepted = -float("inf")
+        for rel, p in window_placements:
+            if rel - last_accepted >= clip_dur * 0.5:
+                thinned.append((rel, p))
+                last_accepted = rel
+
+        # ── Convert thinned placements to ClipDecisions ──────────────────
+        clip_decisions: list[ClipDecision] = []
         timeline_pos = 0.0
         xfade_overlap = 0.0
-        idx = 0
-        last_clip_id = None
+        last_clip_id: str | None = None
+        used_src_ranges: dict[str, list[tuple[float, float]]] = {}
+        robin_idx = 0
 
+        # Build a queue of placement clip choices indexed by timeline proximity
+        placement_queue = list(thinned)  # [(rel_beat, ClipPlacement), ...]
+        pq_idx = 0
+
+        safety = 0
         while (timeline_pos - xfade_overlap) < actual_target - 0.05:
-            clip_id = ordered_ids[idx % len(ordered_ids)]
-            idx += 1
+            safety += 1
+            if safety > len(all_clip_ids) * 200:
+                break
 
-            # Skip consecutive same clip when alternatives exist
-            if clip_id == last_clip_id and len(ordered_ids) > 1:
-                clip_id = ordered_ids[idx % len(ordered_ids)]
-                idx += 1
+            seg_dur = clip_dur
 
-            # Determine transition type for this clip (needed before seg_dur calc)
+            # Determine transition
             if is_ai_mix:
                 clip_index = len(clip_decisions)
                 trans_type = XFADE_TRANSITIONS[clip_index % len(XFADE_TRANSITIONS)]
@@ -207,23 +291,101 @@ class DecisionOrchestrator:
                 trans_dur = _DEFAULT_TRANSITION_DURATION if trans_type != "cut" else 0.0
 
             remaining = actual_target - (timeline_pos - xfade_overlap)
-            # For non-first clips with xfade, include the upcoming overlap
-            # so seg_dur is always large enough to make net rendered progress
             overlap_adj = trans_dur if clip_decisions and trans_dur > 0 else 0.0
-            seg_dur = min(clip_dur, remaining + overlap_adj)
-            max_src = clip_durations.get(clip_id, seg_dur)
-            seg_dur = min(seg_dur, max_src)
+            seg_dur = min(seg_dur, remaining + overlap_adj)
             if seg_dur < 0.1:
-                # Clip too short to use, skip it
-                if idx > len(ordered_ids) * 10:
-                    break
-                continue
+                break
 
-            # Cycle source offset so repeated uses show different parts
-            reuse_count = sum(1 for cd in clip_decisions if cd.clip_id == clip_id)
-            src_start = (reuse_count * clip_dur) % max_src
-            if src_start + seg_dur > max_src:
-                src_start = max(0.0, max_src - seg_dur)
+            # Audio energy at this position for matching
+            abs_time = timeline_pos + audio_start
+            beat_energy = self._get_audio_energy_at(energy_curve, abs_time)
+
+            # ── Tier-1: Consume next alignment placement near timeline_pos ─
+            clip_id: str | None = None
+            src_start: float = 0.0
+            energy_score: float = 0.5
+
+            # Advance past stale placements
+            while pq_idx < len(placement_queue) and placement_queue[pq_idx][0] < timeline_pos - clip_dur:
+                pq_idx += 1
+
+            if pq_idx < len(placement_queue):
+                rel_beat, placement = placement_queue[pq_idx]
+                if abs(rel_beat - timeline_pos) < clip_dur:
+                    cid = placement.clip_id
+                    skip = cid == last_clip_id and len(all_clip_ids) > 1
+                    if not skip and _is_available(cid):
+                        clip_id = cid
+                        max_src = clip_durations.get(cid, seg_dur)
+                        src_start = placement.trim_start
+                        seg_dur = min(seg_dur, max_src)
+                        if src_start + seg_dur > max_src:
+                            src_start = max(0.0, max_src - seg_dur)
+                        energy_score = placement.energy_match_score
+                    pq_idx += 1
+
+            # ── Tier-2: Best-segment energy matching ─────────────────
+            if clip_id is None:
+                best_match: tuple[str, float, float, float] | None = None
+                best_score = -1.0
+                for cid in all_clip_ids:
+                    if cid == last_clip_id and len(all_clip_ids) > 1:
+                        continue
+                    if not _is_available(cid):
+                        continue
+                    max_src = clip_durations.get(cid, seg_dur)
+                    if max_src < 0.1:
+                        continue
+                    result = self._find_best_segment_for_energy(
+                        clip_segments.get(cid, []),
+                        beat_energy,
+                        min(seg_dur, max_src),
+                        max_src,
+                        used_src_ranges.get(cid, []),
+                    )
+                    if result and result[2] > best_score:
+                        best_match = (cid, result[0], result[1], result[2])
+                        best_score = result[2]
+
+                if best_match:
+                    clip_id = best_match[0]
+                    src_start = best_match[1]
+                    max_src = clip_durations.get(clip_id, seg_dur)
+                    seg_dur = min(seg_dur, max_src)
+                    if src_start + seg_dur > max_src:
+                        src_start = max(0.0, max_src - seg_dur)
+                    energy_score = best_match[3]
+
+            # ── Tier-3: Round-robin with stride ──────────────────────
+            if clip_id is None:
+                for _ in range(len(all_clip_ids)):
+                    cid = all_clip_ids[robin_idx % len(all_clip_ids)]
+                    robin_idx += 1
+                    if cid == last_clip_id and len(all_clip_ids) > 1:
+                        continue
+                    if _is_available(cid):
+                        clip_id = cid
+                        break
+                if clip_id is None:
+                    counts = {cid: _reuse_count(cid) for cid in all_clip_ids}
+                    for cid in sorted(counts, key=counts.get):
+                        if cid != last_clip_id or len(all_clip_ids) == 1:
+                            clip_id = cid
+                            break
+                    if clip_id is None:
+                        clip_id = min(counts, key=counts.get)
+
+                max_src = clip_durations.get(clip_id, seg_dur)
+                seg_dur = min(seg_dur, max_src)
+                reuse_count = _reuse_count(clip_id)
+                stride = max(seg_dur, max_src / max(1, int(actual_target / clip_dur)))
+                src_start = (reuse_count * stride) % max_src
+                if src_start + seg_dur > max_src:
+                    src_start = max(0.0, max_src - seg_dur)
+                energy_score = 0.5
+
+            if seg_dur < 0.1:
+                continue
 
             try:
                 cd = ClipDecision(
@@ -234,15 +396,19 @@ class DecisionOrchestrator:
                     timeline_end=round(timeline_pos + seg_dur, 4),
                     transition_type=trans_type,
                     transition_duration=trans_dur,
-                    energy_match_score=0.8,
+                    energy_match_score=round(energy_score, 4),
                 )
                 clip_decisions.append(cd)
                 if len(clip_decisions) > 1 and trans_dur > 0:
                     xfade_overlap += trans_dur
                 timeline_pos += seg_dur
                 last_clip_id = clip_id
+                used_src_ranges.setdefault(clip_id, []).append(
+                    (src_start, src_start + seg_dur)
+                )
             except Exception:
-                if idx > len(ordered_ids) * 10:
+                robin_idx += 1
+                if safety > len(all_clip_ids) * 200:
                     break
                 continue
 
@@ -320,16 +486,11 @@ class DecisionOrchestrator:
                 continue
 
         total = round(timeline_pos - xfade_overlap, 4) if adjusted else edl.total_duration
-        # Apply manual audio_start if provided; otherwise keep the LLM/fallback value
-        audio_trim_start = edl.audio_decision.trim_start
-        if prefs.audio_start is not None:
-            audio_trim_start = prefs.audio_start
-        audio_trim_end = round(audio_trim_start + total, 4)
+        # trim_end must be absolute audio position, not just the timeline length
+        audio_trim_end = round(edl.audio_decision.trim_start + total, 4)
         return EditDecisionList(
             clip_decisions=adjusted,
-            audio_decision=edl.audio_decision.model_copy(
-                update={"trim_start": audio_trim_start, "trim_end": audio_trim_end}
-            ),
+            audio_decision=edl.audio_decision.model_copy(update={"trim_end": audio_trim_end}),
             total_duration=total,
             target_fps=edl.target_fps,
             target_width=edl.target_width,

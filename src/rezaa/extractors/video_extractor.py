@@ -11,8 +11,9 @@ from rezaa.models.video import Segment, VideoFeatures
 class VideoFeatureExtractor:
     """Extracts video features from video files using OpenCV."""
 
-    def __init__(self, sample_interval: int = 5):
+    def __init__(self, sample_interval: int = 5, segment_window_sec: float | None = None):
         self.sample_interval = sample_interval  # Process every Nth frame
+        self.segment_window_sec = segment_window_sec  # Beat-synced window (set by pipeline)
 
     def extract_features(self, video_path: Path, clip_id: str) -> VideoFeatures:
         """Extract all video features from a file."""
@@ -51,10 +52,14 @@ class VideoFeatureExtractor:
                     height=height,
                 )
 
-            motion_score = self.calculate_motion_score(frames)
+            per_frame_flow = self._compute_per_frame_flow(frames)
+            motion_score = self.calculate_motion_score(frames, per_frame_flow)
             scene_changes = self.detect_scene_changes(frames, frame_indices, fps)
             energy_score = self.calculate_energy_score(frames, motion_score)
-            best_segments = self.identify_best_segments(frames, frame_indices, fps, duration)
+            window_sec = self.segment_window_sec or min(2.0, max(0.5, duration / 10))
+            best_segments = self.identify_best_segments(
+                frames, frame_indices, fps, duration, per_frame_flow, window_sec
+            )
 
             return VideoFeatures(
                 clip_id=clip_id,
@@ -70,12 +75,13 @@ class VideoFeatureExtractor:
         finally:
             cap.release()
 
-    def calculate_motion_score(self, frames: list[np.ndarray]) -> float:
-        """Calculate motion score using Farneback optical flow."""
+    @staticmethod
+    def _compute_per_frame_flow(frames: list[np.ndarray]) -> list[float]:
+        """Return normalized [0,1] optical flow magnitude per frame (0.0 for frame 0)."""
         if len(frames) < 2:
-            return 0.0
+            return [0.0] * len(frames)
 
-        flow_magnitudes = []
+        flow_values = [0.0]  # first frame has no flow
         prev_gray = cv2.cvtColor(frames[0], cv2.COLOR_BGR2GRAY)
 
         for frame in frames[1:]:
@@ -93,15 +99,28 @@ class VideoFeatureExtractor:
                 flags=0,
             )
             magnitude = np.sqrt(flow[..., 0] ** 2 + flow[..., 1] ** 2)
-            flow_magnitudes.append(float(np.mean(magnitude)))
+            # Normalize: flow > 10 pixels/frame is very high motion
+            flow_values.append(float(min(1.0, np.mean(magnitude) / 10.0)))
             prev_gray = curr_gray
 
-        if not flow_magnitudes:
+        return flow_values
+
+    def calculate_motion_score(
+        self, frames: list[np.ndarray], per_frame_flow: list[float] | None = None,
+    ) -> float:
+        """Calculate motion score using pre-computed or freshly computed optical flow."""
+        if len(frames) < 2:
             return 0.0
 
-        avg_flow = np.mean(flow_magnitudes)
-        # Normalize: empirically, flow > 10 pixels/frame is very high motion
-        score = float(min(1.0, avg_flow / 10.0))
+        if per_frame_flow is None:
+            per_frame_flow = self._compute_per_frame_flow(frames)
+
+        # Skip frame 0 (always 0.0)
+        flow_values = per_frame_flow[1:] if len(per_frame_flow) > 1 else per_frame_flow
+        if not flow_values:
+            return 0.0
+
+        score = float(min(1.0, np.mean(flow_values)))
         return round(score, 4)
 
     def detect_scene_changes(
@@ -163,24 +182,34 @@ class VideoFeatureExtractor:
         frame_indices: list[int],
         fps: float,
         duration: float,
+        per_frame_flow: list[float] | None = None,
         window_sec: float = 2.0,
     ) -> list[Segment]:
-        """Identify best segments using sliding window + non-max suppression."""
+        """Identify best segments using sliding window + non-max suppression.
+
+        Per-segment energy now includes motion (matching whole-clip energy weights):
+        0.4 * motion + 0.3 * saturation + 0.2 * edges + 0.1 * brightness_var
+        """
         if len(frames) < 2 or duration < window_sec:
             if frames and duration > 0:
                 energy = self.calculate_energy_score(frames, 0.5)
                 return [Segment(start=0.0, end=round(duration, 4), energy_score=energy)]
             return []
 
-        # Calculate per-frame energy scores
+        if per_frame_flow is None:
+            per_frame_flow = self._compute_per_frame_flow(frames)
+
+        # Calculate per-frame energy scores (matching calculate_energy_score weights)
         frame_times = [idx / fps for idx in frame_indices]
         frame_energies = []
-        for frame in frames:
+        for i, frame in enumerate(frames):
             hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
             sat = float(np.mean(hsv[:, :, 1])) / 255.0
+            bvar = min(1.0, float(np.std(hsv[:, :, 2])) / 128.0)
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             edges = float(np.mean(cv2.Canny(gray, 50, 150) > 0))
-            frame_energies.append(0.6 * sat + 0.4 * edges)
+            motion = per_frame_flow[i] if i < len(per_frame_flow) else 0.0
+            frame_energies.append(0.4 * motion + 0.3 * sat + 0.2 * edges + 0.1 * bvar)
 
         # Sliding window
         candidates = []
@@ -203,13 +232,16 @@ class VideoFeatureExtractor:
         # Sort by energy descending
         candidates.sort(key=lambda x: x[2], reverse=True)
 
+        # Adaptive segment cap
+        max_segments = max(5, min(15, int(duration / window_sec)))
+
         # Non-max suppression
         selected = []
         for start, end, energy in candidates:
             overlaps = any(not (end <= s_start or start >= s_end) for s_start, s_end, _ in selected)
             if not overlaps:
                 selected.append((start, end, energy))
-            if len(selected) >= 5:
+            if len(selected) >= max_segments:
                 break
 
         # Sort by start time

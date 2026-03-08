@@ -129,6 +129,9 @@ class BeatClipAlignmentAgent(BaseAgent):
             # Combined energy for matching
             combined_energy = 0.6 * beat_energy + 0.4 * beat_strength
 
+            # Pre-compute target clip duration for segment filtering
+            clip_dur = self.optimize_clip_duration(combined_energy, bpm)
+
             # Find best matching clip
             best_clip = None
             best_score = -1.0
@@ -142,7 +145,9 @@ class BeatClipAlignmentAgent(BaseAgent):
                 if not self.handle_clip_reuse(va.clip_id, recent_clips, beat_time):
                     continue
 
-                score = self.calculate_energy_match(combined_energy, va.features.energy_score)
+                score = self._best_segment_energy_match(
+                    combined_energy, va, clip_dur
+                )
                 if score > best_score:
                     best_score = score
                     best_clip = va
@@ -152,7 +157,7 @@ class BeatClipAlignmentAgent(BaseAgent):
                 scores = [
                     (
                         va,
-                        self.calculate_energy_match(combined_energy, va.features.energy_score),
+                        self._best_segment_energy_match(combined_energy, va, clip_dur),
                     )
                     for va in video_analyses
                     if va.clip_id != last_clip_id
@@ -162,7 +167,7 @@ class BeatClipAlignmentAgent(BaseAgent):
                     scores = [
                         (
                             va,
-                            self.calculate_energy_match(combined_energy, va.features.energy_score),
+                            self._best_segment_energy_match(combined_energy, va, clip_dur),
                         )
                         for va in video_analyses
                     ]
@@ -172,8 +177,7 @@ class BeatClipAlignmentAgent(BaseAgent):
             if best_clip is None:
                 continue
 
-            # Calculate clip duration and trim points
-            clip_dur = self.optimize_clip_duration(combined_energy, bpm)
+            # Cap clip duration to source length
             clip_dur = min(clip_dur, best_clip.features.duration)
 
             # Find best segment within clip
@@ -209,6 +213,20 @@ class BeatClipAlignmentAgent(BaseAgent):
             prev_t, prev_e = t, e
 
         return energy_curve[-1][1]
+
+    def _best_segment_energy_match(
+        self, combined_energy: float, va: VideoAnalysisOutput, clip_dur: float,
+    ) -> float:
+        """Find the best energy match using per-segment scores when available."""
+        if va.features.best_segments:
+            seg_scores = [
+                self.calculate_energy_match(combined_energy, seg.energy_score)
+                for seg in va.features.best_segments
+                if (seg.end - seg.start) >= clip_dur * 0.5
+            ]
+            if seg_scores:
+                return max(seg_scores)
+        return self.calculate_energy_match(combined_energy, va.features.energy_score)
 
     def _find_best_trim(
         self, clip: VideoAnalysisOutput, target_dur: float, target_energy: float

@@ -111,6 +111,12 @@ class PipelineManager:
             state.stage_timings["audio_analysis"] = round(time.perf_counter() - t0, 4)
             self.feature_store.save_features(job_id, "audio_analysis", audio_analysis)
 
+            # Set beat-synced segment window for video extraction
+            if audio_analysis.features.bpm > 0:
+                self.video_agent.extractor.segment_window_sec = max(
+                    0.5, min(2.0, 60.0 / audio_analysis.features.bpm)
+                )
+
             # Stage 2: Video Extraction + Analysis
             self._check_cancelled(job_id)
             self._update_state(
