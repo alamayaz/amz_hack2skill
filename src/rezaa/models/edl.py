@@ -58,8 +58,8 @@ class EditDecisionList(BaseModel):
     audio_decision: AudioDecision = Field(default_factory=AudioDecision)
     total_duration: float = Field(..., ge=0)
     target_fps: float = Field(default=30.0, gt=0)
-    target_width: int = Field(default=1920, gt=0)
-    target_height: int = Field(default=1080, gt=0)
+    target_width: int = Field(default=1280, gt=0)
+    target_height: int = Field(default=720, gt=0)
     edl_metadata: dict = Field(default_factory=dict)
 
     @field_validator("clip_decisions")

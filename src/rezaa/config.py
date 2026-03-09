@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     output_audio_codec: str = "aac"
     output_format: str = "mp4"
     output_crf: int = 23
-    output_preset: str = "medium"
+    output_preset: str = "fast"
 
 
 def get_settings() -> Settings:
