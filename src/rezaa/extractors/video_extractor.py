@@ -11,7 +11,11 @@ from rezaa.models.video import Segment, VideoFeatures
 class VideoFeatureExtractor:
     """Extracts video features from video files using OpenCV."""
 
-    def __init__(self, sample_interval: int = 5, segment_window_sec: float | None = None):
+    # Max dimension for analysis frames (saves memory on 1080p+ inputs)
+    _ANALYSIS_MAX_DIM = 320
+    _MAX_FRAMES = 120  # Cap total sampled frames to limit memory
+
+    def __init__(self, sample_interval: int = 10, segment_window_sec: float | None = None):
         self.sample_interval = sample_interval  # Process every Nth frame
         self.segment_window_sec = segment_window_sec  # Beat-synced window (set by pipeline)
 
@@ -28,17 +32,25 @@ class VideoFeatureExtractor:
             height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             duration = frame_count / fps if fps > 0 else 0.0
 
-            # Read frames at sample interval
+            # Read frames at sample interval, downscaled for analysis
             frames = []
             frame_indices = []
             idx = 0
+            max_dim = self._ANALYSIS_MAX_DIM
             while True:
                 ret, frame = cap.read()
                 if not ret:
                     break
                 if idx % self.sample_interval == 0:
+                    # Downscale to save memory
+                    h, w = frame.shape[:2]
+                    if max(h, w) > max_dim:
+                        scale = max_dim / max(h, w)
+                        frame = cv2.resize(frame, (int(w * scale), int(h * scale)))
                     frames.append(frame)
                     frame_indices.append(idx)
+                    if len(frames) >= self._MAX_FRAMES:
+                        break
                 idx += 1
 
             if not frames:
