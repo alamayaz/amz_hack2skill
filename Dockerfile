@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY pyproject.toml README.md ./
+# bust cache on source changes
 COPY src/ src/
 
 RUN pip install --no-cache-dir .
