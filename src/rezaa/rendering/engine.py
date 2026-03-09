@@ -150,6 +150,8 @@ class RenderingEngine:
             [
                 "-t",
                 f"{actual_video_dur:.4f}",
+                "-threads",
+                str(self.settings.output_threads),
                 "-c:v",
                 self.settings.output_video_codec,
                 "-crf",

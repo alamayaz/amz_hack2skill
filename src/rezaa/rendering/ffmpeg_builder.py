@@ -18,6 +18,10 @@ _XFADE_MAP: dict[str, str] = {
 
 _DEFAULT_TRANSITION_DURATION = 0.5
 
+# Maximum clips in a single xfade chain to cap peak memory usage.
+# Clips beyond this limit are concatenated without transitions.
+_MAX_XFADE_CLIPS = 8
+
 
 class FFmpegFilterGraphBuilder:
     """Builds FFmpeg filter graphs for video editing."""
@@ -113,7 +117,12 @@ class FFmpegFilterGraphBuilder:
         target_height: int,
         target_fps: float,
     ) -> tuple[list[str], str, float]:
-        """Build an xfade-chain filter graph for non-cut transitions."""
+        """Build an xfade-chain filter graph for non-cut transitions.
+
+        To cap peak memory usage, only the first _MAX_XFADE_CLIPS clips use
+        xfade transitions.  Any remaining clips are concatenated (no transition)
+        onto the xfade result.
+        """
         input_args: list[str] = []
         filter_parts: list[str] = []
 
@@ -144,11 +153,15 @@ class FFmpegFilterGraphBuilder:
             filter_parts.append("[v0]copy[outv]")
             return input_args, ";\n".join(filter_parts), clip_dur
 
-        # Step 2: build xfade chain
+        # Determine how many clips participate in the xfade chain
+        xfade_count = min(n, _MAX_XFADE_CLIPS)
+        overflow_count = n - xfade_count
+
+        # Step 2: build xfade chain for the first xfade_count clips
         accumulated = clip_decisions[0]["source_end"] - clip_decisions[0]["source_start"]
         prev_label = "[v0]"
 
-        for i in range(1, n):
+        for i in range(1, xfade_count):
             cd = clip_decisions[i]
             transition = cd.get("transition_type", "cut")
             trans_dur = cd.get("transition_duration", _DEFAULT_TRANSITION_DURATION)
@@ -160,7 +173,12 @@ class FFmpegFilterGraphBuilder:
                 trans_dur = 0.001
 
             offset = max(0, accumulated - trans_dur)
-            out_label = "outv" if i == n - 1 else f"x{i - 1}"
+
+            # Label: final output only if no overflow clips follow
+            if i == xfade_count - 1 and overflow_count == 0:
+                out_label = "outv"
+            else:
+                out_label = f"x{i - 1}"
 
             filter_parts.append(
                 f"{prev_label}[v{i}]xfade=transition={xfade_name}"
@@ -170,6 +188,21 @@ class FFmpegFilterGraphBuilder:
             clip_dur = cd["source_end"] - cd["source_start"]
             accumulated = offset + clip_dur
             prev_label = f"[{out_label}]"
+
+        # Step 3: if there are overflow clips, concat them onto the xfade result
+        if overflow_count > 0:
+            # Collect labels: xfade result + each overflow clip
+            concat_inputs = [prev_label]
+            for i in range(xfade_count, n):
+                concat_inputs.append(f"[v{i}]")
+                clip_dur = clip_decisions[i]["source_end"] - clip_decisions[i]["source_start"]
+                accumulated += clip_dur
+
+            concat_str = (
+                "".join(concat_inputs)
+                + f"concat=n={overflow_count + 1}:v=1:a=0[outv]"
+            )
+            filter_parts.append(concat_str)
 
         return input_args, ";\n".join(filter_parts), accumulated
 

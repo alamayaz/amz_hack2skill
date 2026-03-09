@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     output_format: str = "mp4"
     output_crf: int = 23
     output_preset: str = "fast"
+    output_threads: int = 2
 
 
 def get_settings() -> Settings:
